@@ -5,6 +5,6 @@ Right now, all that's done is the unit object and 5 unit types, with a simple AI
 
 Clicking the gray rectangle on the top left after a battle will restart the board.
 
-The roadmap for this project is to make it turn-based, add a couple of towers, and add buttons and economic features for the player to buy tanks &c, just like in MechaBellum.
+The roadmap for this project is to make it turn-based, add a couple of towers, and add buttons and economic features for the player to buy tanks &c, just like in MechaBellum. (Oh, and also to change the window size, or make it resizable, or something like that idk).
 
 When the low-res MB clone is complete, the foundations for this code will be repurposed for another project I'm working on, which will be nothing like MB, but it will need this kind of feature-set to work.
