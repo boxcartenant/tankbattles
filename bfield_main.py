@@ -9,15 +9,16 @@ import math
 
 #debugging variables. will be removed in final release.
 SYMMETRICAL_TEAMS = False #Set to false if you want random team comp and placement.
-NUMBER_OF_UNITS = 10 #units per team
+NUMBER_OF_UNITS = 100#units per team
 
 
 # Constants
 WINNER_DECLARED = False
-WIDTH = 800
-HEIGHT = 600
+WIDTH = 1024
+HEIGHT = 768
 UNIT_SIZE = 16
 FPS = 30  # Maximum frame rate
+UNIT_THREAD_COUNT = 2
 TROOP_TYPES = { #when making a troop type, the range must be divisible by the bullet speed to avoid overrange.
     "Canon": {
         "range": 200.0, #pixels
@@ -33,7 +34,7 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
     "Chaingun":{
         "range": 150.0,
         "shotcolor": "orange",
-        "damage": 5.0,
+        "damage": 3.0,
         "rate": 0.2,
         "shotcount": 1,
         "spread": 10.0,
@@ -97,9 +98,9 @@ def calculate_shot_line(shooting_unit_x, shooting_unit_y, target_unit_x, target_
 
 class Unit:
     def __init__(self, canvas, x, y, troop_type, team_color):
-        global WIDTH, HEIGHT, UNIT_SIZE, WINNER_DECLARED, TEAM_COLORS
+        global WIDTH, HEIGHT, UNIT_SIZE, WINNER_DECLARED, TEAM_COLORS, UNIT_THREAD_COUNT
         self.lock = threading.Lock()
-        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
+        self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=UNIT_THREAD_COUNT)
         self.canvas = canvas
         self.x = x
         self.xc = x+UNIT_SIZE/2
@@ -112,7 +113,7 @@ class Unit:
         self.sprite = self.get_sprite()
         self.id = canvas.create_image(x, y, image=self.sprite, anchor=tk.NW)
         self.target_unit = None
-        self.threads = []
+        self.futures = [] #future objects as returned by the executor
         self.alive = True
         self.remainingHP = TROOP_TYPES[troop_type]["HP"]
         self.last_shot_time = time.time()
@@ -138,11 +139,13 @@ class Unit:
         return ImageTk.PhotoImage(sprite)
 
     def HPMod(self, modifier):
-        self.lock.acquire()
+        #self.lock.acquire()
         self.remainingHP += modifier
         self.hb_size = self.hb_max * self.remainingHP/TROOP_TYPES[self.troop_type]["HP"]
         self.canvas.coords(self.healthbar, round(self.x)-2, round(self.y)+UNIT_SIZE, round(self.x)-2+self.hb_size, round(self.y)+UNIT_SIZE+4)
-        self.lock.release()
+        if self.remainingHP < 0 and self.alive:
+            self.die()
+        #self.lock.release()
 
     def die(self):
         if self.alive:
@@ -152,9 +155,7 @@ class Unit:
             self.sprite = ImageTk.PhotoImage(self.sprite_sheet.crop((sprite_x, sprite_y, sprite_x + UNIT_SIZE, sprite_y + UNIT_SIZE)))
             # Update the canvas item with the new sprite image
             self.canvas.itemconfig(self.id, image=self.sprite)
-            self.lock.acquire()
             self.canvas.itemconfig(self.healthbar, state = 'hidden')
-            self.lock.release()
             self.canvas.update()
             self.executor.shutdown()
     
@@ -174,12 +175,13 @@ class Unit:
         if not(newy < 0 or y2 > HEIGHT):
             self.y = newy
             self.yc = self.y+UNIT_SIZE/2
-        self.canvas.coords(self.id, round(self.x), round(self.y))
+        #I lock the healthbar whenever we move, because sometimes healthbar ghosts were being left behind if a unit was attacked while it moved.
         self.lock.acquire()
+        self.canvas.coords(self.id, round(self.x), round(self.y))
         #self.canvas.delete(self.healthbar)
         self.canvas.coords(self.healthbar, round(self.x)-2, round(self.y)+UNIT_SIZE, round(self.x)-2+self.hb_size, round(self.y)+UNIT_SIZE+4)
-        self.lock.release()
         self.canvas.update()
+        self.lock.release()
         #if self.target_id is not None:
             #self.canvas.delete(self.target_id)
             #self.target_id = None
@@ -215,15 +217,15 @@ class Unit:
                 if distance < (shoot_range-UNIT_SIZE):
                     #set target_in_range so we won't move forward anymore
                     self.target_in_range = True
-                    self.threads.append(self.executor.submit(self.animate_bullet, self.troop_type, self.target_unit, self.xc, self.yc))
+                    self.futures.append(self.executor.submit(self.animate_bullet, self.troop_type, self.target_unit, self.xc, self.yc))
 
                     #self.threads.append(threading.Thread(target=self.animate_bullet, args=(self.troop_type, self.target_unit, self.xc, self.yc)))
                     #self.threads[-1].start() 
-                    cleaned_threads = []
-                    for thread in self.threads:
-                        if not thread.done():
-                            cleaned_threads.append(thread)
-                    self.threads = cleaned_threads
+                    cleaned_futures = []
+                    for future in self.futures:
+                        if not future.done():
+                            cleaned_futures.append(future)
+                    self.futures = cleaned_futures
                     self.last_shot_time = current_time
                 else:
                     #gotta get closer to hit.
@@ -249,7 +251,10 @@ class Unit:
             #vox, voy = dx / steps, dy / steps
             #vmx, vmy = vx*sm, vy*sm 
             # Create a line with zero length initially. The bool at the end marks whether the bullet has hit.
-            bullet_id.append([self.canvas.create_line(x0, y0, x0, y0, fill=TROOP_TYPES[troop_type]["shotcolor"]), vx, vy, sm, False, 0, 0])
+            #self.lock.acquire()
+            mybid = self.canvas.create_line(x0, y0, x0, y0, fill=TROOP_TYPES[troop_type]["shotcolor"])
+            #self.lock.release()
+            bullet_id.append([mybid, vx, vy, sm, False, 0, 0])
         #print(vx*steps, vy*steps, distance)
         
         #animate the bullets
@@ -270,8 +275,10 @@ class Unit:
                     if (d==0):
                         xmag = vx*(b+1)
                         ymag = vy*(b+1)
+                        #self.lock.acquire()
                         self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
                         self.canvas.update()
+                        #self.lock.release()
                         time.sleep(0.01)  # Adjust speed here
                     else:
                         #bullet hit = true. don't check this bullet anymore
@@ -279,12 +286,17 @@ class Unit:
                         xmag = vx*b + bullet[1]*d
                         ymag = vy*b + bullet[2]*d
                         #use the unit vector to get the distance we should render the bullet
+                        #self.lock.acquire()
                         self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
                         self.canvas.update()
+                        #self.lock.release()
                     
         time.sleep(0.2) #show the bullet a little longer for the user to see it.
+        #self.lock.acquire()
         for bullet in bullet_id:
             self.canvas.delete(bullet[0])  # Remove the bullet line after animation
+            self.canvas.update()
+        #self.lock.release()
         del bullet_id
         return
         
@@ -308,8 +320,7 @@ class Unit:
                         #self.canvas.delete(self.healthbar)
                         unit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
                         #self.lock.release()
-                        if unit.remainingHP < 0 and unit.alive:
-                            unit.die()
+
                         return d
         elif self.team_color == "Red":
             for unit in greenUnits:
@@ -317,8 +328,6 @@ class Unit:
                     if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
                         d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
                         unit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
-                        if unit.remainingHP < 0 and unit.alive:
-                            unit.die()
                         return d
         return 0
 
@@ -395,6 +404,11 @@ def main():
             
 
     update_frame()
+
+    def close_window():
+        """Closes the window and exits the program."""
+        root.destroy()
+    root.protocol("<Destroy>", close_window)
     root.mainloop()
 
 if __name__ == "__main__":
