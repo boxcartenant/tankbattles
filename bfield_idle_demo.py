@@ -29,7 +29,9 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "spread": 5.0, #size of shot cone (degrees)
         "HP": 130.0,
         "speed": 1.5, #this is movement speed
-        "bulletspeed": 50
+        "bulletspeed": 50, 
+        "simulshots": 1, #simultaneous shots. 1=wait for each bullet to hit before firing again.
+        "cost": 56
         },
     "Chaingun":{
         "range": 150.0,
@@ -40,7 +42,9 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "spread": 10.0,
         "HP": 105.0,
         "speed": 2,
-        "bulletspeed": 50
+        "bulletspeed": 50,
+        "simulshots": 2,
+        "cost": 42
         },
     "Missile":{
         "range": 300.0,
@@ -51,7 +55,9 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "spread": 20.0, 
         "HP": 100.0,
         "speed": 0.5,
-        "bulletspeed": 15
+        "bulletspeed": 15,
+        "simulshots": 1,
+        "cost": 41
         },
     "Laser":{
         "range": 250.0,
@@ -62,7 +68,9 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "spread": 0.0, 
         "HP": 80.0,
         "speed": 1,
-        "bulletspeed": 100
+        "bulletspeed": 100,
+        "simulshots": 3,
+        "cost": 63
         },
     "shotgun":{
         "range": 100.0,
@@ -73,12 +81,25 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "spread": 50.0, 
         "HP": 70.0,
         "speed": 2.5,
-        "bulletspeed": 40
+        "bulletspeed": 40,
+        "simulshots": 1,
+        "cost": 25
+        },
+    "homebase":{
+        "range": 0.0,
+        "shotcolor": "black",
+        "damage": 0.0,
+        "rate": 9999.0,
+        "shotcount": 0,
+        "spread": 0.0, 
+        "HP": 500.0,
+        "speed": 0.0,
+        "bulletspeed": 1,
+        "simulshots": 0,
+        "cost": 9999
         }
     }
 
-SHOOTING_RANGES = {"Canon": 100, "Chaingun": 150, "Missile": 200, "Laser": 250, "Bomb": 300}
-BULLET_COLORS = {"Canon": "red", "Chaingun": "blue", "Missile": "yellow", "Laser": "green", "Bomb": "purple"}
 redUnits = []
 greenUnits = []
 TEAM_COLORS = {"Green": Image.open("GreenTankSprites.png"), "Red": Image.open("RedTankSprites.png")}
@@ -121,6 +142,7 @@ class Unit:
         self.hb_max = UNIT_SIZE+4
         self.hb_size = self.hb_max
         self.healthbar = canvas.create_rectangle(x-2, y+UNIT_SIZE, x+UNIT_SIZE+2, y+UNIT_SIZE+4, fill="green")
+        self.simulshots = TROOP_TYPES[troop_type]["simulshots"]
 
     def __del__(self):
         self.executor.shutdown()
@@ -157,7 +179,7 @@ class Unit:
             self.canvas.itemconfig(self.id, image=self.sprite)
             self.canvas.itemconfig(self.healthbar, state = 'hidden')
             self.canvas.update()
-            self.executor.shutdown()
+            self.executor.shutdown(wait=True)
     
     def update_position(self):
         dx = self.target_unit.xc - self.xc
@@ -212,7 +234,7 @@ class Unit:
                     WINNER_DECLARED = True
                     print(self.team_color, "wins!")
             #if the target is in range, shoot it
-            if self.target_unit is not None:
+            if (self.target_unit is not None) and (self.simulshots > 0):
                 distance = ((self.xc - self.target_unit.xc) ** 2 + (self.yc - self.target_unit.yc) ** 2) ** 0.5
                 if distance < (shoot_range-UNIT_SIZE):
                     #set target_in_range so we won't move forward anymore
@@ -256,48 +278,51 @@ class Unit:
             #self.lock.release()
             bullet_id.append([mybid, vx, vy, sm, False, 0, 0])
         #print(vx*steps, vy*steps, distance)
-        
+        self.simulshots -= 1
         #animate the bullets
         self.grow_bullets(bullet_id, steps, x0, y0)
         return
 
     def grow_bullets(self, bullet_id, steps, x0, y0):
-        for b in range(steps):
+        try:
+            for b in range(steps):
+                for bullet in bullet_id:
+                    #did this bullet hit its target yet?
+                    if not bullet[4]:
+                        #basic attack vector
+                        vx = bullet[1]*bullet[3]
+                        vy = bullet[2]*bullet[3]
+                        #the target's health is depleated inside self.check_bullet_hit
+                        d = self.check_bullet_hit(x0 + vx*b, y0 + vy*b, x0 + vx*(b+1), y0 + vy*(b+1))
+                        #d = distance to target if hit, else 0
+                        if (d==0):
+                            xmag = vx*(b+1)
+                            ymag = vy*(b+1)
+                            #self.lock.acquire()
+                            self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
+                            self.canvas.update()
+                            #self.lock.release()
+                            time.sleep(0.01)  # Adjust speed here
+                        else:
+                            #bullet hit = true. don't check this bullet anymore
+                            bullet[4] = True
+                            xmag = vx*b + bullet[1]*d
+                            ymag = vy*b + bullet[2]*d
+                            #use the unit vector to get the distance we should render the bullet
+                            #self.lock.acquire()
+                            self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
+                            self.canvas.update()
+                            #self.lock.release() 
+            time.sleep(0.2) #show the bullet a little longer for the user to see it.
+            #self.lock.acquire()
             for bullet in bullet_id:
-                #did this bullet hit its target yet?
-                if not bullet[4]:
-                    #basic attack vector
-                    vx = bullet[1]*bullet[3]
-                    vy = bullet[2]*bullet[3]
-                    #the target's health is depleated inside self.check_bullet_hit
-                    d = self.check_bullet_hit(x0 + vx*b, y0 + vy*b, x0 + vx*(b+1), y0 + vy*(b+1))
-                    #d = distance to target if hit, else 0
-                    if (d==0):
-                        xmag = vx*(b+1)
-                        ymag = vy*(b+1)
-                        #self.lock.acquire()
-                        self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
-                        self.canvas.update()
-                        #self.lock.release()
-                        time.sleep(0.01)  # Adjust speed here
-                    else:
-                        #bullet hit = true. don't check this bullet anymore
-                        bullet[4] = True
-                        xmag = vx*b + bullet[1]*d
-                        ymag = vy*b + bullet[2]*d
-                        #use the unit vector to get the distance we should render the bullet
-                        #self.lock.acquire()
-                        self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
-                        self.canvas.update()
-                        #self.lock.release()
-                    
-        time.sleep(0.2) #show the bullet a little longer for the user to see it.
-        #self.lock.acquire()
-        for bullet in bullet_id:
-            self.canvas.delete(bullet[0])  # Remove the bullet line after animation
-            self.canvas.update()
-        #self.lock.release()
-        del bullet_id
+                self.canvas.delete(bullet[0])  # Remove the bullet line after animation
+                self.canvas.update()
+            #self.lock.release()
+            del bullet_id
+        except Exception as e:
+            print(e)
+        self.simulshots += 1
         return
         
     def check_bullet_hit(self, x0, y0, x1, y1):
@@ -383,7 +408,6 @@ def main():
         greenUnits = []
         redUnits = []
         WINNER_DECLARED = False
-        testbit = True
         canvas.delete("all")
         restart_button = canvas.create_rectangle(5,5,100,25, fill='silver', tags='restart_button', state='hidden')
         canvas.tag_bind('restart_button', '<Button-1>', reset_units)
