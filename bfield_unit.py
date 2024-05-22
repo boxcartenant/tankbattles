@@ -42,12 +42,12 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "speed": 1.5, #this is movement speed
         "bulletspeed": 50, 
         "simulshots": 1, #how many times the gun can shoot again while it still has bullets in the air
-        "cost": 56
+        "cost": 58
         },
     "Chaingun":{
         "range": 150.0,
         "shotcolor": "orange",
-        "damage": 3.0,
+        "damage": 2.0,
         "rate": 0.2,
         "shotcount": 1,
         "spread": 10.0,
@@ -55,13 +55,13 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "speed": 2,
         "bulletspeed": 50,
         "simulshots": 2,
-        "cost": 42
+        "cost": 52
         },
     "Missile":{
         "range": 300.0,
         "shotcolor": "red",
         "damage": 15.0,
-        "rate": 8.0,
+        "rate": 7.0,
         "shotcount": 10,
         "spread": 20.0, 
         "HP": 100.0,
