@@ -21,7 +21,7 @@ ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common eleme
 # 0 hb top, 1 bot, 2 flank top, 3 bot, 4 home top, 5 bot, 6 flank top, 7 bot, 8 ctl top, 9 bot
 
 Flank_Unlock_Cost = 100
-PLAYER_START_HP = 10000
+PLAYER_START_HP = 5000
 CASH_PER_ROUND = 200
 
 #lists to carry the units on the battlefield
@@ -49,11 +49,18 @@ class Player:
         self.healthbar = healthbar
         self.hbc = hbc
         self.alive = True
+
+    def reinitialize(self):
+        self.hp = PLAYER_START_HP
+        self.cash = 0
+        self.alive = True
+        self.canvas.itemconfig(self.healthbar, state="normal")
+    
     def loseHP(self, modifier):
         #returns true if player still alive, else false
         self.hp -= modifier
         if self.hp <= 0:
-            self.canvas.itemconfig(healthbar, state=hidden)
+            self.canvas.itemconfig(self.healthbar, state="hidden")
             self.alive = False
             return self.alive
         else:
@@ -415,6 +422,8 @@ def setup_battlefield(new_battlefield = False):
         greenFlankN.unlocked = False
         redFlankN.unlocked = False
         redFlankS.unlocked = False
+        greenPlayer.reinitialize()
+        redPlayer.reinitialize()
     else:
         allUnits.reinitialize_units()
     greenPlayer.changeCash(CASH_PER_ROUND)
@@ -460,14 +469,16 @@ def ai_opponent():
     while True:
         #decide whether to buy a flank or a unit
         decision = random.choice(["flank", "troop"])
-        if (decision == "flank") and (redPlayer.cash > Flank_Unlock_Cost) and (not (redFlankS.unlocked or redFlankN.unlocked)):
+        if (decision == "flank") and (redPlayer.cash > Flank_Unlock_Cost) and (not (redFlankS.unlocked and redFlankN.unlocked)):
             decision = ["n", "s"]
-            if (decision == "n") and (not redFlankN.unlocked):
+            if ((decision == "n") and (not redFlankN.unlocked)) or redFlankS.unlocked:
                 if redPlayer.changeCash(0-Flank_Unlock_Cost):
                     redFlankN.unlocked = True
+                    print("unlocked North")
             elif not redFlankS.unlocked:
                 if redPlayer.changeCash(0-Flank_Unlock_Cost):
                     redFlankS.unlocked = True
+                    print("unlocked South")
         else:
             #if the flanks are already unlocked, or there isn't enough cash for it, try troops.
             #make a list of the troops we can afford.
@@ -594,6 +605,3 @@ setup_battlefield(True)
 
 
 root.mainloop()
-
-
-
