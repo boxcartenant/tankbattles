@@ -41,20 +41,24 @@ normal_font = Font(size = 10)
 
 #useful object types####################################################
 class Player:
-    def __init__(self, canvas, healthbar, hbc):
+    def __init__(self, canvas, healthbar, hbc, human = False):
         global PLAYER_START_HP
         self.hp = PLAYER_START_HP #sum of surviving enemy unit health subtracted from player health
         self.cash = 0 #cash is issued at setup for round 1
         self.canvas = canvas
         self.healthbar = healthbar
         self.hbc = hbc
+        self.human = human
         self.alive = True
 
     def reinitialize(self):
         self.hp = PLAYER_START_HP
         self.cash = 0
         self.alive = True
+        self.canvas.coords(self.healthbar, self.hbc[0],self.hbc[1],self.hbc[2], self.hbc[3])
         self.canvas.itemconfig(self.healthbar, state="normal")
+        self.canvas.update()
+        
     
     def loseHP(self, modifier):
         #returns true if player still alive, else false
@@ -79,7 +83,8 @@ class Player:
             return False
         else:
             self.cash += modifier
-            self.canvas.itemconfig(cashtext, text="$"+str(self.cash))
+            if self.human:
+                self.canvas.itemconfig(cashtext, text="$"+str(self.cash))
             self.canvas.update()
             return True
         #update cash display
@@ -375,7 +380,7 @@ greenFlankS = Field_Region(canvas, WIDTH-x_end, ylayout[6],WIDTH-smallxoffset , 
 
 #Player objects
 #make sure the coordinates passed here are the same as in the healthbar instantiation above
-greenPlayer = Player(canvas, greenHealthbar, [smallxoffset, ylayout[0], x_end-(cashtextwidth/2), ylayout[1]])
+greenPlayer = Player(canvas, greenHealthbar, [smallxoffset, ylayout[0], x_end-(cashtextwidth/2), ylayout[1]], True)
 redPlayer = Player(canvas, redHealthbar, [WIDTH-smallxoffset, ylayout[0], WIDTH-x_end+(cashtextwidth/2), ylayout[1]])
 
 #unit placement on flank has to be unlocked in-game
@@ -419,7 +424,9 @@ def setup_battlefield(new_battlefield = False):
         allUnits.add_red(redHome.xc, redHome.yc, list(TROOP_TYPES.keys())[-1])
         #initialize the units for each player. Add a homebase unit to each.
         greenFlankS.unlocked = False
+        greenFlankS.hide()
         greenFlankN.unlocked = False
+        greenFlankN.hide()
         redFlankN.unlocked = False
         redFlankS.unlocked = False
         greenPlayer.reinitialize()
@@ -474,11 +481,11 @@ def ai_opponent():
             if ((decision == "n") and (not redFlankN.unlocked)) or redFlankS.unlocked:
                 if redPlayer.changeCash(0-Flank_Unlock_Cost):
                     redFlankN.unlocked = True
-                    print("unlocked North")
+                    #print("unlocked North")
             elif not redFlankS.unlocked:
                 if redPlayer.changeCash(0-Flank_Unlock_Cost):
                     redFlankS.unlocked = True
-                    print("unlocked South")
+                    #print("unlocked South")
         else:
             #if the flanks are already unlocked, or there isn't enough cash for it, try troops.
             #make a list of the troops we can afford.
@@ -605,3 +612,6 @@ setup_battlefield(True)
 
 
 root.mainloop()
+
+
+
