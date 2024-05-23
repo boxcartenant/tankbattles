@@ -35,14 +35,14 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "range": 200.0, #pixels
         "shotcolor": "blue",
         "damage": 20.0,
-        "rate": 3.0, #seconds between shots
+        "rate": 4.0, #seconds between shots
         "shotcount": 1, # how many bullets come out in one shot
         "spread": 5.0, #size of shot cone (degrees)
         "HP": 130.0,
         "speed": 1.5, #this is movement speed
         "bulletspeed": 50, 
         "simulshots": 1, #how many times the gun can shoot again while it still has bullets in the air
-        "cost": 58
+        "cost": 55
         },
     "Chaingun":{
         "range": 150.0,
@@ -51,24 +51,24 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "rate": 0.2,
         "shotcount": 1,
         "spread": 10.0,
-        "HP": 105.0,
+        "HP": 80.0,
         "speed": 2,
         "bulletspeed": 50,
         "simulshots": 2,
-        "cost": 52
+        "cost": 67
         },
     "Missile":{
         "range": 300.0,
         "shotcolor": "red",
         "damage": 15.0,
-        "rate": 7.0,
+        "rate": 8.0,
         "shotcount": 10,
         "spread": 20.0, 
         "HP": 100.0,
         "speed": 0.5,
         "bulletspeed": 15,
         "simulshots": 1,
-        "cost": 41
+        "cost": 55
         },
     "Laser":{
         "range": 250.0,
@@ -80,13 +80,13 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "HP": 80.0,
         "speed": 1,
         "bulletspeed": 100,
-        "simulshots": 3,
+        "simulshots": 2,
         "cost": 80
         },
     "shotgun":{
         "range": 100.0,
         "shotcolor": "pink",
-        "damage": 3.0,
+        "damage": 1.0,
         "rate": 2.0,
         "shotcount": 20,
         "spread": 50.0, 
@@ -97,16 +97,16 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "cost": 35
         },
     "homebase":{
-        "range": 0.0,
+        "range": 500.0,
         "shotcolor": "black",
-        "damage": 0.0,
-        "rate": 9999.0,
-        "shotcount": 0,
+        "damage": 30.0,
+        "rate": 30.0,
+        "shotcount": 1,
         "spread": 0.0, 
-        "HP": 1000.0,
+        "HP": 500.0,
         "speed": 0.0,
-        "bulletspeed": 1,
-        "simulshots": 0,
+        "bulletspeed": 10,
+        "simulshots": 1,
         "cost": 9999
         }
     }
@@ -223,7 +223,10 @@ class Unit:
         self.canvas.update()
 
     def __del__(self):
-        self.executor.shutdown()
+        self.canvas.itemconfig(self.id, state="hidden")
+        self.canvas.itemconfig(self.healthbar, state="hidden")
+        del self.sprite
+        self.executor.shutdown(wait=True)
 
     def unit_AI(self):
         if self.alive:
@@ -279,7 +282,7 @@ class Unit:
         self.canvas.coords(self.id, round(self.x), round(self.y))
         #self.canvas.delete(self.healthbar)
         self.canvas.coords(self.healthbar, round(self.x)-2, round(self.y)+UNIT_SIZE, round(self.x)-2+self.hb_size, round(self.y)+UNIT_SIZE+4)
-        self.canvas.update()
+        #self.canvas.update()
         self.lock.release()
         #if self.target_id is not None:
             #self.canvas.delete(self.target_id)
@@ -318,7 +321,7 @@ class Unit:
             #if the target is in range, shoot it
             if (self.target_unit is not None) and (self.simulshots > 0):
                 distance = ((self.xc - self.target_unit.xc) ** 2 + (self.yc - self.target_unit.yc) ** 2) ** 0.5
-                if distance < (shoot_range-UNIT_SIZE):
+                if distance < (shoot_range-(UNIT_SIZE*2)):
                     #set target_in_range so we won't move forward anymore
                     self.target_in_range = True
                     self.futures.append(self.executor.submit(self.animate_bullet, self.troop_type, self.target_unit, self.xc, self.yc))
@@ -381,7 +384,7 @@ class Unit:
                             ymag = vy*(b+1)
                             #self.lock.acquire()
                             self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
-                            self.canvas.update()
+                            #self.canvas.update()
                             #self.lock.release()
                             time.sleep(0.01)  # Adjust speed here
                         else:
@@ -392,13 +395,13 @@ class Unit:
                             #use the unit vector to get the distance we should render the bullet
                             #self.lock.acquire()
                             self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
-                            self.canvas.update()
+#                            self.canvas.update()
                             #self.lock.release() 
             time.sleep(0.2) #show the bullet a little longer for the user to see it.
             #self.lock.acquire()
             for bullet in bullet_id:
                 self.canvas.delete(bullet[0])  # Remove the bullet line after animation
-                self.canvas.update()
+                #self.canvas.update()
             #self.lock.release()
             del bullet_id
         except Exception as e:
