@@ -20,7 +20,7 @@ FPS = 30  # Maximum frame rate
 ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common elements
 # 0 hb top, 1 bot, 2 flank top, 3 bot, 4 home top, 5 bot, 6 flank top, 7 bot, 8 ctl top, 9 bot
 
-Flank_Unlock_Cost = 100
+Flank_Unlock_Cost = 50
 PLAYER_START_HP = 5000
 CASH_PER_ROUND = 200
 
@@ -526,10 +526,12 @@ def resolve_battle():
         #list the live tanks; not including the castle
         if len(allUnits.redUnits) > 1:
             live_red_units = [tank for tank in allUnits.redUnits[1:] if tank.alive]
+            #live_red_units = [tank for tank in allUnits.redUnits if tank.alive]
         else:
             live_red_units = []
         if len(allUnits.greenUnits) > 1:
             live_green_units = [tank for tank in allUnits.greenUnits[1:] if tank.alive]
+            #live_green_units = [tank for tank in allUnits.greenUnits if tank.alive]
         else:
             live_green_units = []
 
@@ -557,6 +559,7 @@ def resolve_battle():
         for tank in units_to_check:
             tank.unit_AI()
         #keep doing update_frame until someone wins.
+        canvas.update()
         root.after(int(1000/FPS), update_frame)
 
     if (len(allUnits.greenUnits)>1) or (len(allUnits.redUnits)>1):
@@ -612,6 +615,3 @@ setup_battlefield(True)
 
 
 root.mainloop()
-
-
-
