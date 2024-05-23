@@ -1,10 +1,10 @@
 # tankbattles
 Tank Battler
 
-Right now, all that's done is the unit object and 5 unit types, with a simple AI that follows and targets the nearest enemy until dead. The game just generates two teams and sends them to fight one another. When one team is dead, it declares the winner and then shows a gray rectangle on the top left of the window.
+This is basically a featureless MechaBellum clone. Right now, you can buy/place tanks and unlock the flanks. You can't upgrade units, and there are no special effects to buy (like missiles or napalm, etc).
 
-Clicking the gray rectangle on the top left after a battle will restart the board.
+It's not really balanced well, but there are some interesting effects to specializing in one kind of tank. For example, if you only spend all your money on shotguns, you'll have an extremely strong early game, but that will drop off much later. I'd capitalize on that and just increase the player health to make the games longer and defeat that kind of strategy, but the game starts to lag in a big way when there are too many tanks. So, optimization is on the agenda.
 
-The roadmap for this project is to make it turn-based, add a couple of towers, and add buttons and economic features for the player to buy tanks &c, just like in MechaBellum. (Oh, and also to change the window size, or make it resizable, or something like that idk).
+Right now, it's set up so that it would be pretty easy to add more tanks. Just modify the sprite sheet and the unit dictionary. Instructions are in the unit class file.
 
-When the low-res MB clone is complete, the foundations for this code will be repurposed for another project I'm working on, which will be nothing like MB, but it will need this kind of feature-set to work.
+I'm 50/50 on if I'm going to keep developing this. I might add multiplayer later, or balance it a little more for fun, or maybe add more features or improve the AI. But as it is, I've accomplished what I set out to do: the basic foundations of this game are going to be repurposed for another project.
