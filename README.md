@@ -8,3 +8,5 @@ It's not really balanced well, but there are some interesting effects to special
 Right now, it's set up so that it would be pretty easy to add more tanks. Just modify the sprite sheet and the unit dictionary. Instructions are in the unit class file.
 
 I'm 50/50 on if I'm going to keep developing this. I might add multiplayer later, or balance it a little more for fun, or maybe add more features or improve the AI. But as it is, I've accomplished what I set out to do: the basic foundations of this game are going to be repurposed for another project.
+
+To play the game, put all the files in one folder and run Batfield.py. If you just want to watch tanks fight, bfield_idle_demo.py is for that.
