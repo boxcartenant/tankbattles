@@ -39,8 +39,8 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "shotcount": 1, # how many bullets come out in one shot
         "spread": 5.0, #size of shot cone (degrees)
         "HP": 130.0,
-        "speed": 1.5, #this is movement speed
-        "bulletspeed": 50, 
+        "speed": 1.5, #tank movement speed in pixels
+        "bulletspeed": 40, 
         "simulshots": 1, #how many times the gun can shoot again while it still has bullets in the air
         "cost": 55
         },
@@ -53,7 +53,7 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "spread": 10.0,
         "HP": 80.0,
         "speed": 2,
-        "bulletspeed": 50,
+        "bulletspeed": 30,
         "simulshots": 2,
         "cost": 67
         },
@@ -66,7 +66,7 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "spread": 20.0, 
         "HP": 100.0,
         "speed": 0.5,
-        "bulletspeed": 15,
+        "bulletspeed": 5,
         "simulshots": 1,
         "cost": 55
         },
@@ -79,7 +79,7 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "spread": 0.0, 
         "HP": 80.0,
         "speed": 1,
-        "bulletspeed": 100,
+        "bulletspeed": 50,
         "simulshots": 2,
         "cost": 80
         },
@@ -92,7 +92,7 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "spread": 50.0, 
         "HP": 70.0,
         "speed": 2.5,
-        "bulletspeed": 40,
+        "bulletspeed": 30,
         "simulshots": 1,
         "cost": 35
         },
@@ -188,6 +188,8 @@ class Unit:
         self.sprite_sheet = TEAM_COLORS[team_color]
         self.sprite = self.get_sprite()
         self.id = canvas.create_image(x, y, image=self.sprite, anchor=tk.NW)
+        self.canvas.tag_bind(self.id, "<Enter>", self.enter)
+        self.canvas.tag_bind(self.id, "<Leave>", self.leave)
         self.target_unit = None
         self.futures = [] #future objects as returned by the executor
         self.alive = True
@@ -198,6 +200,11 @@ class Unit:
         self.hb_size = self.hb_max
         self.healthbar = canvas.create_rectangle(x-2, y+UNIT_SIZE, x+UNIT_SIZE+2, y+UNIT_SIZE+4, fill="green")
         self.simulshots = TROOP_TYPES[troop_type]["simulshots"]
+        self.waittime = 100     #miliseconds
+        self.wraplength = 180   #pixels
+        self.wait_id = None
+        self.tw = None
+        self.tooltip_text = f"{troop_type}\n"
 
     def reinitialize(self):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=UNIT_THREAD_COUNT)
@@ -223,8 +230,11 @@ class Unit:
         self.canvas.update()
 
     def __del__(self):
-        self.canvas.itemconfig(self.id, state="hidden")
-        self.canvas.itemconfig(self.healthbar, state="hidden")
+        try:
+            self.canvas.itemconfig(self.id, state="hidden")
+            self.canvas.itemconfig(self.healthbar, state="hidden")
+        except Exception as e:
+            print(e)
         del self.sprite
         self.executor.shutdown(wait=True)
 
@@ -386,7 +396,6 @@ class Unit:
                             self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
                             #self.canvas.update()
                             #self.lock.release()
-                            time.sleep(0.01)  # Adjust speed here
                         else:
                             #bullet hit = true. don't check this bullet anymore
                             bullet[4] = True
@@ -395,8 +404,9 @@ class Unit:
                             #use the unit vector to get the distance we should render the bullet
                             #self.lock.acquire()
                             self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
-#                            self.canvas.update()
-                            #self.lock.release() 
+                            #self.canvas.update()
+                            #self.lock.release()
+                time.sleep(0.05)  # Adjust speed here
             time.sleep(0.2) #show the bullet a little longer for the user to see it.
             #self.lock.acquire()
             for bullet in bullet_id:
@@ -415,7 +425,9 @@ class Unit:
         maxx = max(x0, x1)
         miny = min(y0, y1)
         maxy = max(y0, y1)
-        
+
+        lowd = 999999
+        hitunit = None
         if self.team_color == "Green":
             #print("gs")
             for unit in allUnits.redUnits:
@@ -423,22 +435,65 @@ class Unit:
                 if unit.alive:
                     if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
                         d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
-                        #self.lock.acquire()
-                        #unit.remainingHP -= TROOP_TYPES[self.troop_type]["damage"]
-                        #unit.hb_size = unit.hb_max * unit.remainingHP/TROOP_TYPES[unit.troop_type]["HP"]
-                        #self.canvas.delete(self.healthbar)
-                        unit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
-                        #self.lock.release()
-
-                        return d
+                        if d < lowd:
+                            lowd = d
+                            hitunit = unit
+                        #return d
         elif self.team_color == "Red":
             for unit in allUnits.greenUnits:
                 if unit.alive:
                     if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
                         d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
-                        unit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
-                        return d
+                        if d < lowd:
+                            lowd = d
+                            hitunit = unit
+                        #unit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
+                        #return d
+        if hitunit is not None:
+            #print(hitunit.remainingHP)
+            hitunit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
+            return lowd
         return 0
+    
+    def enter(self, event=None):
+        self.schedule()
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hidetip()
+
+    def schedule(self):
+        self.unschedule()
+        self.wait_id = self.canvas.after(self.waittime, self.showtip)
+
+    def unschedule(self):
+        id = self.wait_id
+        self.wait_id = None
+        if id:
+            self.canvas.after_cancel(id)
+
+    def showtip(self, event=None):
+        x = y = 0
+        #x, y, cx, cy = self.widget.bbox("insert")
+        window_x = self.canvas.winfo_rootx()
+        window_y = self.canvas.winfo_rooty()
+        x = window_x + self.x + UNIT_SIZE + 10
+        y = window_y + self.y + UNIT_SIZE + 10
+        # creates a toplevel window
+        self.tw = tk.Toplevel(self.canvas)
+        # Leaves only the label and removes the app window
+        self.tw.wm_overrideredirect(True)
+        self.tw.wm_geometry("+%d+%d" % (x, y))
+        label = tk.Label(self.tw, text=self.tooltip_text, justify='left',
+                       background="#ffffff", relief='solid', borderwidth=1,
+                       wraplength = self.wraplength)
+        label.pack(ipadx=1)
+
+    def hidetip(self):
+        tw = self.tw
+        self.tw= None
+        if tw:
+            tw.destroy()
 
 
         
