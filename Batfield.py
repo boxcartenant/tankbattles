@@ -327,7 +327,7 @@ def place_buy_unit(event):
 
 #other useful functions...
 def quick_message(x,y,mytext, duration=2000):
-    
+    #make a tooltip type message anywhere
     global canvas
     window_x = canvas.winfo_rootx()
     window_y = canvas.winfo_rooty()
@@ -345,14 +345,13 @@ def quick_message(x,y,mytext, duration=2000):
     canvas.after(duration, lambda pop=tw: hide_quick_message(pop))
 
 def hide_quick_message(tw):
-    
+    #hide a tooltip
     te = tw
     tw= None
     if te:
         te.destroy()
 
 #Instances of the above types################################################
-#Yardley makefield soccer
 # UI objects
 
 ylayout = [HEIGHT*ypct/100 for ypct in ylp] #percent y offsets for common elements
