@@ -7,11 +7,6 @@ from tkinter import messagebox
 import time
 import random
 
-##################
-# to do:
-# - Review setup phase
-
-
 
 # Define global variables
 WIDTH = 1024
@@ -23,6 +18,7 @@ ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common eleme
 Flank_Unlock_Cost = 50
 PLAYER_START_HP = 5000
 CASH_PER_ROUND = 200
+AI_CASH_HANDICAP = 20
 
 #lists to carry the units on the battlefield
 units = []
@@ -34,6 +30,8 @@ root = tk.Tk()
 root.title("They're tanks, my dude.")
 canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg="white")
 canvas.pack()
+
+
 allUnits.setCanvas(canvas)
 
 big_number_font = Font(weight='bold', size=60)
@@ -108,7 +106,7 @@ class Field_Region:
             self.interior = "PaleGreen"
         else:
             self.interior = "misty rose"
-        self.rectangle = canvas.create_rectangle(x1, y1, x2, y2, fill=self.interior)
+        self.rectangle = self.canvas.create_rectangle(x1, y1, x2, y2, fill=self.interior)
         if click_callback is not None:
             self.canvas.tag_bind(self.rectangle, '<Button-1>', lambda event : self.click_callback(event))
         canvas.update()
@@ -144,8 +142,8 @@ class Shop_Troop_Button:
         self.wait_id = None
         self.tw = None
         #make the button rectangle
-        self.button_id = canvas.create_rectangle(x1, y1, x2, y2, fill='gray', outline='black')
-        canvas.tag_bind(self.button_id, "<Button-1>", self.button_click)
+        self.button_id = self.canvas.create_rectangle(x1, y1, x2, y2, fill='gray', outline='black')
+        self.canvas.tag_bind(self.button_id, "<Button-1>", self.button_click)
         self.canvas.tag_bind(self.button_id, "<Enter>", self.enter)
         self.canvas.tag_bind(self.button_id, "<Leave>", self.leave)
         #make a troop icon on it
@@ -420,8 +418,8 @@ def setup_battlefield(new_battlefield = False):
     #clear the screen and delete everything
     if new_battlefield:
         allUnits.clear_units()
-        allUnits.add_green(greenHome.xc, greenHome.yc, list(TROOP_TYPES.keys())[-1])
-        allUnits.add_red(redHome.xc, redHome.yc, list(TROOP_TYPES.keys())[-1])
+        allUnits.add_green(greenHome.xc-(UNIT_SIZE/2), greenHome.yc-(UNIT_SIZE/2), list(TROOP_TYPES.keys())[-1])
+        allUnits.add_red(redHome.xc-(UNIT_SIZE/2), redHome.yc-(UNIT_SIZE/2), list(TROOP_TYPES.keys())[-1])
         #initialize the units for each player. Add a homebase unit to each.
         greenFlankS.unlocked = False
         greenFlankS.hide()
@@ -434,7 +432,7 @@ def setup_battlefield(new_battlefield = False):
     else:
         allUnits.reinitialize_units()
     greenPlayer.changeCash(CASH_PER_ROUND)
-    redPlayer.changeCash(CASH_PER_ROUND)
+    redPlayer.changeCash(CASH_PER_ROUND+AI_CASH_HANDICAP)
     WINNER_DECLARED = False
     #canvas.delete("all")
     canvas.update()
@@ -615,3 +613,6 @@ setup_battlefield(True)
 
 
 root.mainloop()
+
+
+
