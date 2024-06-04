@@ -30,21 +30,21 @@ UNIT_THREAD_COUNT = 2
 # - - make sure the homebase and dead-tank are the bottom two sprites.
 # Done! It will populate the shop buttons and everything else for you.
 
-TROOP_TYPES = { #when making a troop type, the range must be divisible by the bullet speed to avoid overrange.
+TROOP_TYPES = {
     "Canon": {
-        "range": 200.0, #pixels
+        "range": 200.0,  # pixels
         "shotcolor": "blue",
         "damage": 20.0,
-        "rate": 4.0, #seconds between shots
-        "shotcount": 1, # how many bullets come out in one shot
-        "spread": 5.0, #size of shot cone (degrees)
+        "rate": 4.0,  # seconds between shots
+        "shotcount": 1,  # how many bullets come out in one shot
+        "spread": 5.0,  # size of shot cone (degrees)
         "HP": 130.0,
-        "speed": 1.5, #tank movement speed in pixels
+        "speed": 1.3,  # tank movement speed in pixels
         "bulletspeed": 40, 
-        "simulshots": 1, #how many times the gun can shoot again while it still has bullets in the air
-        "cost": 55
-        },
-    "Chaingun":{
+        "simulshots": 1,  # how many times the gun can shoot again while it still has bullets in the air
+        "cost": 70
+    },
+    "Chaingun": {
         "range": 150.0,
         "shotcolor": "orange",
         "damage": 2.0,
@@ -52,25 +52,25 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "shotcount": 1,
         "spread": 10.0,
         "HP": 80.0,
-        "speed": 2,
+        "speed": 2.0,
         "bulletspeed": 30,
         "simulshots": 2,
         "cost": 67
-        },
-    "Missile":{
+    },
+    "Missile": {
         "range": 300.0,
         "shotcolor": "red",
         "damage": 15.0,
         "rate": 8.0,
         "shotcount": 10,
         "spread": 20.0, 
-        "HP": 100.0,
+        "HP": 40.0,
         "speed": 0.5,
         "bulletspeed": 5,
         "simulshots": 1,
         "cost": 55
-        },
-    "Laser":{
+    },
+    "Laser": {
         "range": 250.0,
         "shotcolor": "purple",
         "damage": 1.0,
@@ -78,25 +78,25 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "shotcount": 1,
         "spread": 0.0, 
         "HP": 80.0,
-        "speed": 1,
+        "speed": 1.0,
         "bulletspeed": 50,
         "simulshots": 2,
         "cost": 80
-        },
-    "shotgun":{
+    },
+    "Shotgun": {
         "range": 100.0,
         "shotcolor": "pink",
         "damage": 1.0,
         "rate": 2.0,
         "shotcount": 20,
         "spread": 50.0, 
-        "HP": 70.0,
+        "HP": 50.0,
         "speed": 2.5,
         "bulletspeed": 30,
         "simulshots": 1,
         "cost": 35
-        },
-    "homebase":{
+    },
+    "Homebase": {
         "range": 500.0,
         "shotcolor": "black",
         "damage": 30.0,
@@ -104,12 +104,13 @@ TROOP_TYPES = { #when making a troop type, the range must be divisible by the bu
         "shotcount": 1,
         "spread": 0.0, 
         "HP": 500.0,
-        "speed": 0.0,
+        "speed": 1e-08,
         "bulletspeed": 10,
         "simulshots": 1,
         "cost": 9999
-        }
     }
+}
+
 
 
 class UnitManager():
@@ -147,9 +148,11 @@ class UnitManager():
     def clear_units(self):
         for unit in self.greenUnits:
             unit.die()
+            unit.hide()
             del unit
         for unit in self.redUnits:
             unit.die()
+            unit.hide()
             del unit
         self.greenUnits = []
         self.redUnits = []
@@ -205,6 +208,7 @@ class Unit:
         self.wait_id = None
         self.tw = None
         self.tooltip_text = f"{troop_type}\n"
+        self.shotnames = []
 
     def reinitialize(self):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=UNIT_THREAD_COUNT)
@@ -230,13 +234,17 @@ class Unit:
         self.canvas.update()
 
     def __del__(self):
+        self.executor.shutdown(wait=True)
+        del self.sprite
         try:
             self.canvas.itemconfig(self.id, state="hidden")
             self.canvas.itemconfig(self.healthbar, state="hidden")
         except Exception as e:
             print(e)
-        del self.sprite
-        self.executor.shutdown(wait=True)
+
+    def hide(self):
+        self.canvas.itemconfig(self.healthbar, state='hidden')
+        self.canvas.itemconfig(self.id, state='hidden')
 
     def unit_AI(self):
         if self.alive:
@@ -269,7 +277,7 @@ class Unit:
             self.canvas.itemconfig(self.id, image=self.sprite)
             self.canvas.itemconfig(self.healthbar, state = 'hidden')
             self.canvas.update()
-            self.executor.shutdown(wait=True)
+            #self.executor.shutdown(wait=True)
     
     def update_position(self):
         dx = self.target_unit.xc - self.xc
@@ -354,27 +362,29 @@ class Unit:
         bulletspeed = TROOP_TYPES[troop_type]["bulletspeed"]
         distance = TROOP_TYPES[troop_type]["range"]
         steps = int(distance / bulletspeed)
-        
-        for i in range(TROOP_TYPES[troop_type]["shotcount"]):
-            #get an endpoint for the bullet, accounting for spread
-            x1, y1 = calculate_shot_line(x0, y0, target_unit.xc, target_unit.yc, TROOP_TYPES[troop_type]["range"], TROOP_TYPES[troop_type]["spread"])
-            #calculate the vector components of the shot line
-            dx, dy = x1 - x0, y1 - y0
-            #get the unit vector
-            vx, vy = dx / distance, dy / distance
-            #get the step magnitude
-            sm = distance/steps
-            #two ways to get the vector magnitude:
-            #vox, voy = dx / steps, dy / steps
-            #vmx, vmy = vx*sm, vy*sm 
-            # Create a line with zero length initially. The bool at the end marks whether the bullet has hit.
-            #self.lock.acquire()
-            mybid = self.canvas.create_line(x0, y0, x0, y0, fill=TROOP_TYPES[troop_type]["shotcolor"])
-            #self.lock.release()
-            bullet_id.append([mybid, vx, vy, sm, False, 0, 0])
-        self.simulshots -= 1
-        #animate the bullets
-        self.grow_bullets(bullet_id, steps, x0, y0)
+        try:
+            for i in range(TROOP_TYPES[troop_type]["shotcount"]):
+                #get an endpoint for the bullet, accounting for spread
+                x1, y1 = calculate_shot_line(x0, y0, target_unit.xc, target_unit.yc, TROOP_TYPES[troop_type]["range"], TROOP_TYPES[troop_type]["spread"])
+                #calculate the vector components of the shot line
+                dx, dy = x1 - x0, y1 - y0
+                #get the unit vector
+                vx, vy = dx / distance, dy / distance
+                #get the step magnitude
+                sm = distance/steps
+                #two ways to get the vector magnitude:
+                #vox, voy = dx / steps, dy / steps
+                #vmx, vmy = vx*sm, vy*sm 
+                # Create a line with zero length initially. The bool at the end marks whether the bullet has hit.
+                #self.lock.acquire()
+                mybid = self.canvas.create_line(x0, y0, x0, y0, fill=TROOP_TYPES[troop_type]["shotcolor"])
+                #self.lock.release()
+                bullet_id.append([mybid, vx, vy, sm, False, 0, 0])
+            self.simulshots -= 1
+            #animate the bullets
+            self.grow_bullets(bullet_id, steps, x0, y0)
+        except Exception as e:
+            print("abab",e)
         return
 
     def grow_bullets(self, bullet_id, steps, x0, y0):
@@ -420,39 +430,43 @@ class Unit:
         return
         
     def check_bullet_hit(self, x0, y0, x1, y1):
-        global allUnits
-        minx = min(x0, x1)
-        maxx = max(x0, x1)
-        miny = min(y0, y1)
-        maxy = max(y0, y1)
+        try:
+            global allUnits
+            minx = min(x0, x1)
+            maxx = max(x0, x1)
+            miny = min(y0, y1)
+            maxy = max(y0, y1)
 
-        lowd = 999999
-        hitunit = None
-        if self.team_color == "Green":
-            #print("gs")
-            for unit in allUnits.redUnits:
-                #bullets pass over dead units.
-                if unit.alive:
-                    if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
-                        d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
-                        if d < lowd:
-                            lowd = d
-                            hitunit = unit
-                        #return d
-        elif self.team_color == "Red":
-            for unit in allUnits.greenUnits:
-                if unit.alive:
-                    if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
-                        d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
-                        if d < lowd:
-                            lowd = d
-                            hitunit = unit
-                        #unit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
-                        #return d
-        if hitunit is not None:
-            #print(hitunit.remainingHP)
-            hitunit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
-            return lowd
+            lowd = 999999
+            hitunit = None
+            if self.team_color == "Green":
+                #print("gs")
+                for unit in allUnits.redUnits:
+                    #bullets pass over dead units.
+                    if unit.alive:
+                        if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
+                            d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
+                            if d < lowd:
+                                lowd = d
+                                hitunit = unit
+                            #return d
+            elif self.team_color == "Red":
+                for unit in allUnits.greenUnits:
+                    if unit.alive:
+                        if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
+                            d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
+                            if d < lowd:
+                                lowd = d
+                                hitunit = unit
+                            #unit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
+                            #return d
+            if hitunit is not None:
+                #print(hitunit.remainingHP)
+                hitunit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
+                #self.canvas.after(1, lambda pop=0-TROOP_TYPES[self.troop_type]["damage"]: hitunit.HPMod(pop))
+                return lowd
+        except Exception as e:
+            print(e)
         return 0
     
     def enter(self, event=None):
