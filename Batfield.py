@@ -18,11 +18,12 @@ ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common eleme
 Flank_Unlock_Cost = 50
 PLAYER_START_HP = 5000
 CASH_PER_ROUND = 200
-AI_CASH_HANDICAP = 20
+AI_CASH_HANDICAP = 10
 
 #lists to carry the units on the battlefield
 units = []
 selected_troop_to_buy = None
+temp_troop_to_buy = None
 #greenUnits and redUnits are borrowed from the unit file
 
 # Initialize tkinter window
@@ -268,7 +269,7 @@ def ready_countdown(num=3):
     return
             
 def ready_pb_click(event):
-    global root, countdown_text, readyButton, buy_NFlank_Btn, buy_SFlank_Btn
+    global root, countdown_text, readyButton, buy_NFlank_Btn, buy_SFlank_Btn, selected_troop_to_buy, temp_troop_to_buy
     answer = messagebox.askyesno("Really ready?", "All done placing troops?")
     if answer:
         readyButton.hide()
@@ -276,6 +277,7 @@ def ready_pb_click(event):
             pb.hide()
         buy_NFlank_Btn.hide()
         buy_SFlank_Btn.hide()
+        temp_troop_to_buy = selected_troop_to_buy
         selected_troop_to_buy = None
         canvas.itemconfig(countdown_text, text="3")
         canvas.itemconfig(countdown_text, state="normal")
@@ -327,7 +329,7 @@ def place_buy_unit(event):
 
 #other useful functions...
 def quick_message(x,y,mytext, duration=2000):
-    #make a tooltip type message anywhere
+    #make a tooltip anywhere
     global canvas
     window_x = canvas.winfo_rootx()
     window_y = canvas.winfo_rooty()
@@ -345,7 +347,7 @@ def quick_message(x,y,mytext, duration=2000):
     canvas.after(duration, lambda pop=tw: hide_quick_message(pop))
 
 def hide_quick_message(tw):
-    #hide a tooltip
+    #hide a tooltip anywhere
     te = tw
     tw= None
     if te:
@@ -443,7 +445,7 @@ def setup_battlefield(new_battlefield = False):
 # Player Setup functions
 def setup_phase():
     
-    global READY, redFlankN, greenHome, redFlankS, redHome, greenFlankN, greenFlankS, buy_NFlank_Btn, buy_SFlank_Btn
+    global READY, redFlankN, greenHome, redFlankS, redHome, greenFlankN, greenFlankS, buy_NFlank_Btn, buy_SFlank_Btn, selected_troop_to_buy, temp_troop_to_buy
     canvas.itemconfig(redFlankN, state='normal')
     canvas.itemconfig(greenHome, state='normal')
     canvas.itemconfig(redFlankS, state='normal')
@@ -460,6 +462,7 @@ def setup_phase():
     readyButton.show()
     for pb in buyTroopButtons:
         pb.show()
+    selected_troop_to_buy = temp_troop_to_buy
     
     
     # Handle unit purchases and placement.
