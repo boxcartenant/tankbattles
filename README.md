@@ -11,9 +11,9 @@ For devs: it's set up so that it would be pretty easy to add more tanks. Just mo
 
 To play the game, put all the files in one folder and run Batfield.py. If you just want to watch tanks fight, bfield_idle_demo.py is for that.
 
-![image info](screenshots/Screenshot 1.png)
-![image info](screenshots/Screenshot 2.png)
-![image info](screenshots/Screenshot 3.png)
+![image info](screenshots/Screenshot1.png)
+![image info](screenshots/Screenshot2.png)
+![image info](screenshots/Screenshot3.png)
 
 To do:
 - fix the client port popup so that it doesn't appear behind the main window
