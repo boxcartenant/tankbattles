@@ -6,6 +6,7 @@ import time
 import threading
 import concurrent.futures
 import math
+import copy
 
 #debugging variables. will be removed in final release.
 SYMMETRICAL_TEAMS = False #Set to false if you want random team comp and placement.
@@ -20,6 +21,9 @@ UNIT_SIZE = 16
 FPS = 30  # Maximum frame rate
 UNIT_THREAD_COUNT = 2
 
+THIS_IS_A_CLIENT = False #is this a client in a network game?
+THIS_IS_A_SERVER = False #is this a server in a network game?
+
 
 ############
 #DEVELOPERS: how to add more troop types...
@@ -30,18 +34,26 @@ UNIT_THREAD_COUNT = 2
 # - - make sure the homebase and dead-tank are the bottom two sprites.
 # Done! It will populate the shop buttons and everything else for you.
 
+#callbacklist = {
+# X "ready":net_ready,
+# X "unit":net_addunit,
+# "die":net_unitdie,
+# "target":net_targetunit,
+# "shoot":net_fixshot
+#}
+
 TROOP_TYPES = {
     "Canon": {
         "range": 200.0,  # pixels
         "shotcolor": "blue",
         "damage": 20.0,
-        "rate": 4.0,  # seconds between shots
-        "shotcount": 1,  # how many bullets come out in one shot
-        "spread": 5.0,  # size of shot cone (degrees)
+        "rate": 4.0, # seconds between shots
+        "shotcount": 1, # how many bullets come out in one shot
+        "spread": 5.0, # size of shot cone (degrees)
         "HP": 130.0,
-        "speed": 1.3,  # tank movement speed in pixels
+        "speed": 1.3, # tank movement speed in pixels
         "bulletspeed": 40, 
-        "simulshots": 1,  # how many times the gun can shoot again while it still has bullets in the air
+        "simulshots": 1, # how many times the gun can shoot again while it still has bullets in the air
         "cost": 70
     },
     "Chaingun": {
@@ -73,7 +85,7 @@ TROOP_TYPES = {
     "Laser": {
         "range": 250.0,
         "shotcolor": "purple",
-        "damage": 1.0,
+        "damage": 1.2,
         "rate": 0.1,
         "shotcount": 1,
         "spread": 0.0, 
@@ -97,14 +109,14 @@ TROOP_TYPES = {
         "cost": 35
     },
     "Homebase": {
-        "range": 500.0,
+        "range": 400.0,
         "shotcolor": "black",
         "damage": 30.0,
         "rate": 30.0,
         "shotcount": 1,
         "spread": 0.0, 
         "HP": 500.0,
-        "speed": 1e-08,
+        "speed": 0,
         "bulletspeed": 10,
         "simulshots": 1,
         "cost": 9999
@@ -115,47 +127,135 @@ TROOP_TYPES = {
 
 class UnitManager():
     def __init__(self):
-        self.greenUnits = []
-        self.redUnits = []
+        self.greenUnits = {}
+        self.redUnits = {}
+        self.liveUnits = []
+        self.liveGreenUnits = {}
+        self.liveRedUnits = {}
+        self.netHandler = None
+        self.unitnum = 0 #increments to make a unique name/handle for each unit
+        self.prefix = "um" #for "unit manager"
+        self.lock = threading.Lock()
         
     def setCanvas(self, canvas):
         self.canvas = canvas
-        
-    def add_unit(self, x, y, troop_type, team_color):
-        if team_color.lower() == "green":
-            self.add_green(x, y, troop_type)
-        else:
-            self.add_red(x, y, troop_type)
-            
-    def add_green(self, x, y, troop_type):
-        self.greenUnits.append(Unit(self.canvas, x, y, troop_type, "Green"))
 
-    def add_red(self, x, y, troop_type):
-        self.redUnits.append(Unit(self.canvas, x, y, troop_type, "Red"))
+    def setNetHandler(self, netHandler):
+        global THIS_IS_A_SERVER, THIS_IS_A_CLIENT
+        self.netHandler = netHandler
+        if netHandler.isServer:
+            THIS_IS_A_SERVER = True
+            self.prefix += "h"
+            print("UnitManager: I'm the server")
+        elif netHandler.isClient:
+            THIS_IS_A_CLIENT = True
+            self.prefix += "c"
+            print("UnitManager: I'm the client")
+        
+    def add_unit(self, x, y, troop_type, team_color, handle = None):
+        if handle is None:
+            with self.lock:
+                self.unitnum += 1
+                handle = self.prefix+str(self.unitnum) #"um" for "unit manager". I might implement other name schemes from other places.
+        if team_color.lower() == "green":
+            self.add_green(x, y, troop_type, handle)
+        else:
+            thisUnit = self.add_red(x, y, troop_type, handle)
+        handle
+            
+    def add_green(self, x, y, troop_type, handle = None):
+        if handle is None:
+            with self.lock:
+                self.unitnum += 1
+                handle = self.prefix+str(self.unitnum)
+        with self.lock:
+            thisUnit = Unit(self.canvas, x, y, troop_type, "Green", handle, self)
+            self.greenUnits[handle] = thisUnit
+            self.liveGreenUnits[handle] = thisUnit
+            self.liveUnits.append(thisUnit)
+            random.shuffle(self.liveUnits)
+        return handle
+
+    def add_red(self, x, y, troop_type, handle = None):
+        if handle is None:
+            with self.lock:
+                self.unitnum += 1
+                handle = self.prefix+str(self.unitnum)
+        with self.lock:
+            thisUnit = Unit(self.canvas, x, y, troop_type, "Red", handle, self)
+            self.redUnits[handle] = thisUnit
+            self.liveRedUnits[handle] = thisUnit
+            self.liveUnits.append(thisUnit)
+            random.shuffle(self.liveUnits)
+        return handle
 
     def reinitialize_units(self):
-        for unit in self.greenUnits:
+        for unit in self.greenUnits.values():
             unit.reinitialize()
-        for unit in self.redUnits:
+            self.liveGreenUnits[unit.handle] = unit
+            self.liveUnits.append(unit)
+        for unit in self.redUnits.values():
             unit.reinitialize()
+            self.liveRedUnits[unit.handle] = unit
+            self.liveUnits.append(unit)
+        random.shuffle(self.liveUnits)
 
     def reset_shot_times(self):
-        for unit in self.redUnits:
+        for unit in self.redUnits.values():
             unit.last_shot_time = time.time()
-        for unit in self.greenUnits:
+        for unit in self.greenUnits.values():
             unit.last_shot_time = time.time()
 
+    def net_send(self, msg, payload):
+        #if msg == "target":
+            #debugvariable = [payload[0].team_color, payload[0].handle, payload[1], [p.handle for p in self.greenUnits], [q.handle for q in self.redUnits]]
+            #print("send target set:",debugvariable)
+        if self.netHandler:
+            self.netHandler.send(msg, payload)
+
+    def kill_unit(self, team_color, handle):
+        if team_color.lower() == "green":
+            self.greenUnits[handle].die()
+        else:
+            self.redUnits[handle].die()
+
+    def set_unit_target(self, unit_team_color, unit_handle, target_handle):
+        #I'm using copies because I was running into thread errors when I set targets for a lot of units at the start of a late-game round.
+        with self.lock:
+            mygreens = copy.copy(self.greenUnits)
+            myreds = copy.copy(self.redUnits)
+        
+        #print("received target set:", debugvariable)
+        if unit_team_color.lower() == "green":
+            mygreens[unit_handle].target_unit = myreds[target_handle]
+        else:
+            myreds[unit_handle].target_unit = mygreens[target_handle]
+
+    def fixed_shot(self, team_color, handle, bullets):
+        #bullets should be a list of tuples, cooresponding to the output of calculate_shot_line, inverted for the client's mirror perspective
+        #I'm using copy.copy() because I was running into thread errors when I fired a lot of units at the start of a late-game round.
+        if team_color.lower() == "green":
+            with self.lock:
+                mygreens = copy.copy(self.greenUnits)
+            mygreens[handle].executor.submit(mygreens[handle].fixed_shot, bullets)
+        else:
+            with self.lock:
+                myreds = copy.copy(self.redUnits)
+            myreds[handle].executor.submit(myreds[handle].fixed_shot, bullets)
+        return
+
+
     def clear_units(self):
-        for unit in self.greenUnits:
+        for unit in self.greenUnits.values():
             unit.die()
             unit.hide()
             del unit
-        for unit in self.redUnits:
+        for unit in self.redUnits.values():
             unit.die()
             unit.hide()
             del unit
-        self.greenUnits = []
-        self.redUnits = []
+        self.greenUnits = {}
+        self.redUnits = {}
 
 allUnits = UnitManager()
 TEAM_COLORS = {"Green": Image.open("GreenTankSprites.png"), "Red": Image.open("RedTankSprites.png")}
@@ -174,7 +274,7 @@ def calculate_shot_line(shooting_unit_x, shooting_unit_y, target_unit_x, target_
     return end_x, end_y
 
 class Unit:
-    def __init__(self, canvas, x, y, troop_type, team_color):
+    def __init__(self, canvas, x, y, troop_type, team_color, handle = None, manager=None):
         global WIDTH, HEIGHT, UNIT_SIZE, WINNER_DECLARED, TEAM_COLORS, UNIT_THREAD_COUNT
         self.startingX = x
         self.startingY = y
@@ -209,6 +309,8 @@ class Unit:
         self.tw = None
         self.tooltip_text = f"{troop_type}\n"
         self.shotnames = []
+        self.handle = handle
+        self.manager = manager
 
     def reinitialize(self):
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=UNIT_THREAD_COUNT)
@@ -247,11 +349,22 @@ class Unit:
         self.canvas.itemconfig(self.id, state='hidden')
 
     def unit_AI(self):
+        global THIS_IS_A_CLIENT
         if self.alive:
-            self.check_for_targets()
-            if (not self.target_in_range) and (self.target_unit is not None):
-                self.update_position()
-    
+            #server sends targets to clients.
+            if not THIS_IS_A_CLIENT:
+                self.check_for_targets()
+            #if there's a target, find out if it's in range.
+            if (self.target_unit is not None):
+                targdistance = ((self.xc - self.target_unit.xc) ** 2 + (self.yc - self.target_unit.yc) ** 2) ** 0.5
+                if targdistance >= (TROOP_TYPES[self.troop_type]["range"]-(UNIT_SIZE*2)):
+                    self.target_in_range = False
+                else:
+                    self.target_in_range = True
+                #if the target is not in range, move to it.
+                if (not self.target_in_range):
+                    self.update_position()
+
     def get_sprite(self):
         sprite_x = 0
         sprite_y = list(TROOP_TYPES.keys()).index(self.troop_type) * UNIT_SIZE
@@ -262,14 +375,26 @@ class Unit:
         #self.lock.acquire()
         self.remainingHP += modifier
         self.hb_size = self.hb_max * self.remainingHP/TROOP_TYPES[self.troop_type]["HP"]
+        if self.hb_size < 0:
+            self.hb_size = 1
         self.canvas.coords(self.healthbar, round(self.x)-2, round(self.y)+UNIT_SIZE, round(self.x)-2+self.hb_size, round(self.y)+UNIT_SIZE+4)
-        if self.remainingHP < 0 and self.alive:
+        if self.remainingHP < 0 and self.alive and (not THIS_IS_A_CLIENT):
             self.die()
         #self.lock.release()
 
     def die(self):
         if self.alive:
+            if THIS_IS_A_SERVER:
+                #print("serverunit: sending die")
+                self.manager.net_send("die", net_unit_archetype(unit=self))
+                #print("serverunit: die sent")
             self.alive = False
+            if self.team_color == "Green":
+                del self.manager.liveGreenUnits[self.handle]
+            else:
+                del self.manager.liveRedUnits[self.handle]
+            self.manager.liveUnits = list(self.manager.liveGreenUnits.values()) + list(self.manager.liveRedUnits.values())
+            random.shuffle(self.manager.liveUnits)
             sprite_x = 0
             sprite_y = len(list(TROOP_TYPES.keys())) * UNIT_SIZE #past the bottom index is a "dead" overlay
             self.sprite = ImageTk.PhotoImage(self.sprite_sheet.crop((sprite_x, sprite_y, sprite_x + UNIT_SIZE, sprite_y + UNIT_SIZE)))
@@ -307,14 +432,14 @@ class Unit:
             #self.target_id = None
 
     def check_for_targets(self):
-        global allUnits, WINNER_DECLARED
+        global allUnits, WINNER_DECLARED, THIS_IS_A_SERVER
         if self.team_color == "Green":
-            units = allUnits.redUnits
+            units = allUnits.redUnits.values()
         else:
-            units = allUnits.greenUnits
+            units = allUnits.greenUnits.values()
         #shoot at unit firing rate
         current_time = time.time()
-        if current_time - self.last_shot_time >= TROOP_TYPES[self.troop_type]["rate"]:
+        if (current_time - self.last_shot_time) >= TROOP_TYPES[self.troop_type]["rate"]:
             shoot_range = TROOP_TYPES[self.troop_type]["range"]
             #units lock onto the nearest unit and keep following until it dies.
             #find a new target if the current target is empty or dead.
@@ -330,27 +455,27 @@ class Unit:
                 #if no target was found, it's because they're all dead.
                 if (self.target_unit is None) and (not WINNER_DECLARED):
                     WINNER_DECLARED = True
-                    print("units", units)
-                    print(allUnits.greenUnits, allUnits.redUnits)
-                    print("mycolor", self.team_color)
-                    for unit in units:
-                        print(unit.alive)
                     print(self.team_color, "wins!")
+                elif self.target_unit and THIS_IS_A_SERVER:
+                    #print("serverunit: setting target:",self.handle, self.target_unit.handle)
+                    self.manager.net_send("target", [net_unit_archetype(unit = self),self.target_unit.handle])
             #if the target is in range, shoot it
             if (self.target_unit is not None) and (self.simulshots > 0):
                 distance = ((self.xc - self.target_unit.xc) ** 2 + (self.yc - self.target_unit.yc) ** 2) ** 0.5
                 if distance < (shoot_range-(UNIT_SIZE*2)):
                     #set target_in_range so we won't move forward anymore
                     self.target_in_range = True
-                    self.futures.append(self.executor.submit(self.animate_bullet, self.troop_type, self.target_unit, self.xc, self.yc))
 
+                    self.executor.submit(self.animate_bullet, self.troop_type, self.target_unit, self.xc, self.yc)
+                    #self.futures.append(self.executor.submit(self.animate_bullet, self.troop_type, self.target_unit, self.xc, self.yc))
+                    
                     #self.threads.append(threading.Thread(target=self.animate_bullet, args=(self.troop_type, self.target_unit, self.xc, self.yc)))
                     #self.threads[-1].start() 
-                    cleaned_futures = []
-                    for future in self.futures:
-                        if not future.done():
-                            cleaned_futures.append(future)
-                    self.futures = cleaned_futures
+                    #cleaned_futures = []
+                    #for future in self.futures:
+                    #    if not future.done():
+                    #        cleaned_futures.append(future)
+                    #self.futures = cleaned_futures
                     self.last_shot_time = current_time
                 else:
                     #gotta get closer to hit.
@@ -358,14 +483,18 @@ class Unit:
                     #return  # Stop checking for more targets after hitting the first one
     
     def animate_bullet(self, troop_type, target_unit, x0, y0):
+        global THIS_IS_A_SERVER
         bullet_id = []
         bulletspeed = TROOP_TYPES[troop_type]["bulletspeed"]
         distance = TROOP_TYPES[troop_type]["range"]
         steps = int(distance / bulletspeed)
+        net_bullets = []
         try:
             for i in range(TROOP_TYPES[troop_type]["shotcount"]):
                 #get an endpoint for the bullet, accounting for spread
                 x1, y1 = calculate_shot_line(x0, y0, target_unit.xc, target_unit.yc, TROOP_TYPES[troop_type]["range"], TROOP_TYPES[troop_type]["spread"])
+                if THIS_IS_A_SERVER:
+                    net_bullets.append([x1,y1])
                 #calculate the vector components of the shot line
                 dx, dy = x1 - x0, y1 - y0
                 #get the unit vector
@@ -382,9 +511,46 @@ class Unit:
                 bullet_id.append([mybid, vx, vy, sm, False, 0, 0])
             self.simulshots -= 1
             #animate the bullets
+            if THIS_IS_A_SERVER:
+                #print("serverunit: sending shots")
+                self.manager.net_send("shoot", [net_unit_archetype(unit = self),net_bullets])
+                #print("serverunit: shots sent")
             self.grow_bullets(bullet_id, steps, x0, y0)
         except Exception as e:
-            print("abab",e)
+            print("something broke in animate_bullet:",e)
+        return
+
+    def fixed_shot(self, bullets):
+        #this is an alternative to animate_bullet. It is intended to be called on clients from the server, to synchronize spread angles.
+        bullet_id = []
+        bulletspeed = TROOP_TYPES[self.troop_type]["bulletspeed"]
+        distance = TROOP_TYPES[self.troop_type]["range"]
+        steps = int(distance / bulletspeed)
+        x0 = self.xc
+        y0 = self.yc
+        try:
+            for i in range(len(bullets)):
+                x1 = bullets[i][0]
+                y1 = bullets[i][1]
+                #calculate the vector components of the shot line
+                dx, dy = x1 - x0, y1 - y0
+                #get the unit vector
+                vx, vy = dx / distance, dy / distance
+                #get the step magnitude
+                sm = distance/steps
+                #two ways to get the vector magnitude:
+                #vox, voy = dx / steps, dy / steps
+                #vmx, vmy = vx*sm, vy*sm 
+                # Create a line with zero length initially. The bool at the end marks whether the bullet has hit.
+                #self.lock.acquire()
+                mybid = self.canvas.create_line(x0, y0, x0, y0, fill=TROOP_TYPES[self.troop_type]["shotcolor"])
+                #self.lock.release()
+                bullet_id.append([mybid, vx, vy, sm, False, 0, 0])
+            self.simulshots -= 1
+            #animate the bullets
+            self.grow_bullets(bullet_id, steps, x0, y0)
+        except Exception as e:
+            print("something broke in fixed_shot:",e)
         return
 
     def grow_bullets(self, bullet_id, steps, x0, y0):
@@ -441,7 +607,7 @@ class Unit:
             hitunit = None
             if self.team_color == "Green":
                 #print("gs")
-                for unit in allUnits.redUnits:
+                for unit in allUnits.redUnits.values():
                     #bullets pass over dead units.
                     if unit.alive:
                         if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
@@ -451,7 +617,7 @@ class Unit:
                                 hitunit = unit
                             #return d
             elif self.team_color == "Red":
-                for unit in allUnits.greenUnits:
+                for unit in allUnits.greenUnits.values():
                     if unit.alive:
                         if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
                             d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
@@ -509,5 +675,18 @@ class Unit:
         if tw:
             tw.destroy()
 
-
-        
+#callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit,"shoot":net_fixshot}
+class net_unit_archetype:
+    def __init__(self, x=None, y=None, troop_type=None, team_color=None, handle = None, unit = None):
+        if unit is None:
+            self.x = x
+            self.y = y
+            self.troop_type = troop_type
+            self.team_color = team_color
+            self.handle = handle
+        else:
+            self.x = unit.x
+            self.y = unit.y
+            self.troop_type = unit.troop_type
+            self.team_color = unit.team_color
+            self.handle = unit.handle
