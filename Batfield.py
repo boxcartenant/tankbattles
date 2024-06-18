@@ -1,11 +1,14 @@
 import tkinter as tk
-from bfield_unit import Unit, allUnits, TROOP_TYPES, WINNER_DECLARED, TEAM_COLORS, UNIT_SIZE
+from bfield_unit import Unit, allUnits, TROOP_TYPES, WINNER_DECLARED, TEAM_COLORS, UNIT_SIZE, net_unit_archetype
 import math
 from tkinter.font import Font
 from PIL import Image, ImageTk
 from tkinter import messagebox
+from tkinter import simpledialog
 import time
 import random
+import netcode
+import threading
 
 
 # Define global variables
@@ -20,6 +23,7 @@ PLAYER_START_HP = 5000
 CASH_PER_ROUND = 200
 AI_CASH_HANDICAP = 10
 
+
 #lists to carry the units on the battlefield
 units = []
 selected_troop_to_buy = None
@@ -32,6 +36,13 @@ root.title("They're tanks, my dude.")
 canvas = tk.Canvas(root, width=WIDTH, height=HEIGHT, bg="white")
 canvas.pack()
 
+#Variables for communication with networked players
+net_player_ready = False
+net_units = []
+GAME_TYPE = None # host, client, or solo
+netHandler = netcode.ServerClient() #will be a netcode.ServerClient object later.
+#the callback list is defined down below the callback functions...
+#callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit,"shoot":net_fixshot}
 
 allUnits.setCanvas(canvas)
 
@@ -103,7 +114,7 @@ class Field_Region:
         self.team_color = team_color
         self.click_callback = click_callback
         self.unlocked=unlocked
-        if team_color == "green":
+        if team_color.lower() == "green":
             self.interior = "PaleGreen"
         else:
             self.interior = "misty rose"
@@ -256,7 +267,7 @@ class generic_Button:
 
 #Functions used by generic_Button###################################
 def ready_countdown(num=3):
-    global countdown_text
+    global countdown_text, net_player_ready
     num -= 1
     canvas.itemconfig(countdown_text, text=str(num))
     canvas.update()
@@ -265,11 +276,24 @@ def ready_countdown(num=3):
         num -= 1
         canvas.itemconfig(countdown_text, text=str(num))
         canvas.update()
-    root.after(1000, ai_opponent)
+    net_player_ready = False
+    if GAME_TYPE == "solo":
+        root.after(1000, ai_opponent)
+    else:
+        root.after(1000, net_opponent)
     return
-            
+
+def check_opponent_ready():
+    if not net_player_ready:
+        root.after(100, check_opponent_ready)
+    else:
+        canvas.itemconfig(countdown_text, text="3")
+        canvas.itemconfig(countdown_text, state="normal")
+        canvas.update()
+        root.after(500, ready_countdown)
+
 def ready_pb_click(event):
-    global root, countdown_text, readyButton, buy_NFlank_Btn, buy_SFlank_Btn, selected_troop_to_buy, temp_troop_to_buy
+    global root, countdown_text, readyButton, buy_NFlank_Btn, buy_SFlank_Btn, selected_troop_to_buy, temp_troop_to_buy, GAME_TYPE, net_player_ready, netHandler
     answer = messagebox.askyesno("Really ready?", "All done placing troops?")
     if answer:
         readyButton.hide()
@@ -279,10 +303,22 @@ def ready_pb_click(event):
         buy_SFlank_Btn.hide()
         temp_troop_to_buy = selected_troop_to_buy
         selected_troop_to_buy = None
-        canvas.itemconfig(countdown_text, text="3")
-        canvas.itemconfig(countdown_text, state="normal")
-        root.after(1000, ready_countdown)
-    
+        
+        if not (GAME_TYPE == "solo"):
+            netHandler.send("ready", True)
+            if not net_player_ready:
+                canvas.itemconfig(countdown_text, text="Opponent Not Ready")
+                canvas.itemconfig(countdown_text, state="normal")
+                canvas.update()
+            check_opponent_ready()
+        else:
+            canvas.itemconfig(countdown_text, text="3")
+            canvas.itemconfig(countdown_text, state="normal")
+            canvas.update()
+            root.after(1000, ready_countdown)
+            
+        
+
 def Nflank_unlock_click(event):
     global canvas, Flank_Unlock_Cost, greenPlayer, buy_NFlank_Btn, greenFlankN
     answer = messagebox.askyesno("Really buy?", "Do you want to pay $\""+str(Flank_Unlock_Cost)+" to use the flank?")
@@ -315,7 +351,7 @@ def buy_troop_button_press(trooptype):
     
 def place_buy_unit(event):
     #having selected a troop type already, select a location to put it on the map
-    global canvas, selected_troop_to_buy, allUnits
+    global canvas, selected_troop_to_buy, allUnits, GAME_TYPE
     # Place a troop of the specified type at the given position on the grid
     # subtract greenbacks
     if selected_troop_to_buy is not None:
@@ -323,7 +359,14 @@ def place_buy_unit(event):
         if answer:
             if greenPlayer.changeCash(0-TROOP_TYPES[selected_troop_to_buy]["cost"]):
                 #center a new unit on the click
-                allUnits.add_green(event.x-(UNIT_SIZE/2), event.y-(UNIT_SIZE/2), selected_troop_to_buy)
+                thisx = event.x-(UNIT_SIZE/2)
+                thisy = event.y-(UNIT_SIZE/2)
+                thishandle = allUnits.add_green(thisx, thisy, selected_troop_to_buy)
+                #print("Added unit:",thishandle)
+                if GAME_TYPE != "solo":
+                    netHandler.send("unit",net_unit_archetype(x=thisx, y=thisy, troop_type=selected_troop_to_buy, team_color="Green",handle=thishandle))
+
+                #GAME_TYPE = None # host, client, or solo
     pass
 
 
@@ -411,6 +454,86 @@ buy_SFlank_Btn = generic_Button(canvas, flankbuttoncoords[0], flankbuttoncoords[
 
 countdown_text = canvas.create_text(WIDTH/2, HEIGHT/2, text="3", font=big_number_font, fill='black', anchor=tk.CENTER, state="hidden")
 
+#Network Callbacks##########################################
+#net_player_ready = False
+#net_units = []
+#GAME_TYPE = None # host, client, or solo
+#netHandler = None #will be a netcode.ServerClient object later.
+#{
+#X "ready":net_ready,
+#X "unit":net_addunit,
+#X "die":net_unitdie,
+#X "target":net_targetunit,
+#X "shoot":net_fixshot
+#}
+
+def net_ready(payload): #called from within Batfield.py
+    #payload doesn't matter
+    global net_player_ready
+    net_player_ready = True
+
+def net_addunit(payload): #called from within Batfield.py
+    #print("adding a unit")
+    #payload must be an object of type bfield_unit.net_unit_archetype
+    global net_units, WIDTH, UNIT_SIZE
+    #added units will always be green from the sender's perspective. Change to red to localize it.
+    payload.team_color = "Red"
+    payload.x = WIDTH-payload.x-UNIT_SIZE
+    #print("adding net unit:",payload.handle)
+    net_units.append(payload)
+    #print("unit in payload")
+
+def net_unitdie(payload): #called from within bfield_unit.py
+    #payload must be an object of type bfield_unit.net_unit_archetype
+    global allUnits
+    #net payload comes from the sender's perspective. localize it here.
+    if payload.team_color.lower() == "green":
+        payload.team_color = "Red"
+    else:
+        payload.team_color = "Green"
+    allUnits.kill_unit(payload.team_color, payload.handle)
+
+def net_targetunit(payload): #called from within bfield_unit.py
+    #payload must be a list.
+    #  list[0] is an object of type bfield_unit.net_unit_archetype
+    #  list[1] is a string handle for the target.
+    #print("net_targetunit:", payload[0].team_color, payload[0].handle)
+    global allUnits
+    #net payload comes from the sender's perspective. localize it here.
+    if payload[0].team_color.lower() == "green":
+        payload[0].team_color = "Red"
+    else:
+        payload[0].team_color = "Green"
+    allUnits.set_unit_target(payload[0].team_color, payload[0].handle, payload[1])
+    
+def net_fixshot(payload): #called from within bfield_unit.py
+    #payload must be a list.
+    #  list[0] is an object of type bfield_unit.net_unit_archetype
+    #  list[1] is a list of shots, each the output of bfield_unit.calculate_shot_lines()
+    global allUnits, WIDTH
+    #net payload comes from the sender's perspective. localize it here.
+    if payload[0].team_color.lower() == "green":
+        payload[0].team_color = "Red"
+    else:
+        payload[0].team_color = "Green"
+    for shot in payload[1]:
+        shot[0] = WIDTH-shot[0]
+    allUnits.fixed_shot(payload[0].team_color, payload[0].handle, payload[1])
+
+def net_win(payload):
+    #payload must be a list:
+    #   list[0] must be a string, "Draw", "Red wins" or "Green wins"
+    #   list[1] must be a number representing the lost HP for the losing player
+    #print(payload)
+    if payload[0].lower() == "red wins":
+        payload[0] = "Green Wins"
+    elif payload[0].lower() == "green wins":
+        payload[0] = "Red Wins"
+    #print(payload)
+    show_winner(payload[0], payload[1])
+
+callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit,"shoot":net_fixshot, "win":net_win}
+
 #GUI Functions##############################################
 def setup_battlefield(new_battlefield = False):
     global countdown_text, WINNER_DECLARED, allUnits, greenPlayer, redPlayer, greenHome, redHome, canvas
@@ -419,8 +542,13 @@ def setup_battlefield(new_battlefield = False):
     #clear the screen and delete everything
     if new_battlefield:
         allUnits.clear_units()
-        allUnits.add_green(greenHome.xc-(UNIT_SIZE/2), greenHome.yc-(UNIT_SIZE/2), list(TROOP_TYPES.keys())[-1])
-        allUnits.add_red(redHome.xc-(UNIT_SIZE/2), redHome.yc-(UNIT_SIZE/2), list(TROOP_TYPES.keys())[-1])
+        if GAME_TYPE == "client":
+            #the host and client have to agree about unit handles, so the client homebase handle will be backwards.
+            allUnits.add_green(greenHome.xc-(UNIT_SIZE/2), greenHome.yc-(UNIT_SIZE/2), list(TROOP_TYPES.keys())[-1], "redhome")
+            allUnits.add_red(redHome.xc-(UNIT_SIZE/2), redHome.yc-(UNIT_SIZE/2), list(TROOP_TYPES.keys())[-1], "greenhome")
+        else:
+            allUnits.add_green(greenHome.xc-(UNIT_SIZE/2), greenHome.yc-(UNIT_SIZE/2), list(TROOP_TYPES.keys())[-1], "greenhome")
+            allUnits.add_red(redHome.xc-(UNIT_SIZE/2), redHome.yc-(UNIT_SIZE/2), list(TROOP_TYPES.keys())[-1], "redhome")
         #initialize the units for each player. Add a homebase unit to each.
         greenFlankS.unlocked = False
         greenFlankS.hide()
@@ -433,7 +561,10 @@ def setup_battlefield(new_battlefield = False):
     else:
         allUnits.reinitialize_units()
     greenPlayer.changeCash(CASH_PER_ROUND)
-    redPlayer.changeCash(CASH_PER_ROUND+AI_CASH_HANDICAP)
+    if GAME_TYPE == "solo":
+        redPlayer.changeCash(CASH_PER_ROUND+AI_CASH_HANDICAP)
+    else:
+        redPlayer.changeCash(CASH_PER_ROUND)
     WINNER_DECLARED = False
     #canvas.delete("all")
     canvas.update()
@@ -469,6 +600,16 @@ def setup_phase():
     # - Show some buttons to purchase units
     # - Show costs and funds for the units
     # - when the "ready" button is pressed, hide all that stuff
+
+
+def net_opponent():
+    #add the units received from the net player
+    global net_units
+    #print("adding opponent units:",[h.handle for h in net_units])
+    for u in net_units:
+        allUnits.add_red(u.x, u.y, u.troop_type, u.handle)
+    net_units = []
+    resolve_battle()
 
 def ai_opponent():
     global canvas, redPlayer, redHome, redFlankN, redFlankS, Flank_Unlock_Cost, UNIT_SIZE    # while there's money in the ai opponent bank
@@ -518,46 +659,49 @@ def resolve_battle():
     global allUnits
     canvas.itemconfig(countdown_text, state="hidden")
     random.shuffle(units)
-
     allUnits.reset_shot_times()
     
     def update_frame():
         global WINNER_DECLARED, allUnits
         #list the live tanks; not including the castle
-        if len(allUnits.redUnits) > 1:
-            live_red_units = [tank for tank in allUnits.redUnits[1:] if tank.alive]
-            #live_red_units = [tank for tank in allUnits.redUnits if tank.alive]
-        else:
-            live_red_units = []
-        if len(allUnits.greenUnits) > 1:
-            live_green_units = [tank for tank in allUnits.greenUnits[1:] if tank.alive]
-            #live_green_units = [tank for tank in allUnits.greenUnits if tank.alive]
-        else:
-            live_green_units = []
+#        if len(list(allUnits.redUnits.values())) > 1:
+#            live_red_units = [tank for tank in list(allUnits.redUnits.values())[1:] if tank.alive]
+#            #live_red_units = [tank for tank in allUnits.redUnits if tank.alive]
+#        else:
+#            live_red_units = []
+#        if len(list(allUnits.greenUnits.values())) > 1:
+#            live_green_units = [tank for tank in list(allUnits.greenUnits.values())[1:] if tank.alive]
+#            #live_green_units = [tank for tank in allUnits.greenUnits if tank.alive]
+#        else:
+#            live_green_units = []
 
         #print("red ones", allUnits.redUnits)
         #print("green ones", allUnits.greenUnits)
 
         #check if either player won (index 0 is the castle)
         #win conditions: kill all enemy units, or the enemy castle.
-        if (not (allUnits.greenUnits[0].alive or allUnits.redUnits[0].alive)) or (not (live_green_units or live_red_units)):
-            #draw conditions: both towers dead, or all tanks dead.
-            root.after(int(1000 / FPS), lambda winner="Draw": show_winner(winner))
-            return
-        elif (not allUnits.greenUnits[0].alive) or (not live_green_units):
-            root.after(int(1000 / FPS), lambda winner="Red Wins": show_winner(winner))
-            return
-        elif (not allUnits.redUnits[0].alive) or (not live_red_units):
-            root.after(int(1000 / FPS), lambda winner="Green Wins": show_winner(winner))
-            return
+        if GAME_TYPE != "client":
+            if (not (allUnits.redUnits["redhome"].alive or allUnits.greenUnits["greenhome"].alive)) or (not ((len(allUnits.liveGreenUnits)>1) or (len(allUnits.liveRedUnits)>1))):
+                #draw conditions: both towers dead, or all tanks dead.
+                root.after(int(1000 / FPS), lambda winner="Draw": show_winner(winner))
+                return
+            elif (not list(allUnits.greenUnits.values())[0].alive) or (not (len(allUnits.liveGreenUnits)>1)):
+                root.after(int(1000 / FPS), lambda winner="Red Wins": show_winner(winner))
+                return
+            elif (not list(allUnits.redUnits.values())[0].alive) or (not (len(allUnits.liveRedUnits)>1)):
+                root.after(int(1000 / FPS), lambda winner="Green Wins": show_winner(winner))
+                return
 
         #shuffle the living units
-        units_to_check = live_green_units + live_red_units
-        random.shuffle(units_to_check)
+        #units_to_check = live_green_units + live_red_units
+        #random.shuffle(units_to_check)
 
         #run the unit AI's
-        for tank in units_to_check:
-            tank.unit_AI()
+        for tank in allUnits.liveUnits:
+            #root.after(int(1000/FPS), tank.unit_AI())
+            tank_thread = threading.Thread(target=tank.unit_AI())
+            tank_thread.start()
+            #tank.unit_AI()
         #keep doing update_frame until someone wins.
         canvas.update()
         root.after(int(1000/FPS), update_frame)
@@ -565,7 +709,7 @@ def resolve_battle():
     if (len(allUnits.greenUnits)>1) or (len(allUnits.redUnits)>1):
         update_frame()
     else:
-        show_winner()
+        show_winner("Draw")
             
     # while not check_game_over():
     # .for i in range(len(maxunits)):
@@ -575,29 +719,40 @@ def resolve_battle():
     # .delete bullet lines
     pass
 
-def show_winner(winner):
+def show_winner(winner, HPloss = 0):
     global countdown_text, redPlayer, greenPlayer, allUnits
     # show who won the battle
     # subtract from player HP
-    HPloss = 0
+    #print(winner)
+    calcLoss = True
+    if HPloss != 0:
+        #print("received HPloss:", HPloss)
+        calcLoss = False
     gameover = False
     if winner == "Green Wins":
-        for tank in allUnits.greenUnits[1:]:
-            if tank.alive:
-                HPloss += tank.remainingHP
+        if calcLoss:
+            for tank in list(allUnits.greenUnits.values())[1:]:
+                if tank.alive:
+                    HPloss += tank.remainingHP
         redPlayer.loseHP(HPloss)
+        if GAME_TYPE == "host":
+            netHandler.send("win",[winner, HPloss])
         if not redPlayer.alive:
             gameover = True
             winner += " the Game"
     if winner == "Red Wins":
-        for tank in allUnits.redUnits[1:]:
-            if tank.alive:
-                HPloss += tank.remainingHP
+        if calcLoss:
+            for tank in list(allUnits.redUnits.values())[1:]:
+                if tank.alive:
+                    HPloss += tank.remainingHP
         greenPlayer.loseHP(HPloss)
+        if GAME_TYPE == "host":
+            netHandler.send("win",[winner, HPloss])
         if not greenPlayer.alive:
             gameover = True
             winner += " the Game"
-    
+
+    #print(winner)
     canvas.itemconfig(countdown_text, text=winner)
     canvas.itemconfig(countdown_text, state="normal")
 
@@ -606,6 +761,86 @@ def show_winner(winner):
     root.after(4000, lambda gameover=gameover: setup_battlefield(gameover))
     pass
 
+#net_player_ready = False
+#net_units = []
+#GAME_TYPE = None # host, client, or solo
+#netHandler = None #will be a netcode.ServerClient object later.
+#callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit}
+
+def get_connection_type(): #a popup window for the user to select solo or multiplayer
+    def on_button_click(choice):
+        global GAME_TYPE, netHandler, callbacklist, allUnits #this global variable stores the result of the popup
+        GAME_TYPE = choice
+        
+        if GAME_TYPE == "client":
+            while True:
+                ip_addr = simpledialog.askstring("IP Address", "Please enter the host IP address.")
+                if not ip_addr:
+                    break
+                port = simpledialog.askstring("Port", "Please enter the host port.")
+                if not port:
+                    break
+                answer = messagebox.askyesno("Host ready?", f"Press 'Yes' when the host at {ip_addr}:{port} has begun hosting")
+                if answer:
+                    netHandler.initialize(ip_addr, int(port), callbacklist)
+                    netHandler.start_client()
+                    allUnits.setNetHandler(netHandler)
+                    popup.destroy()
+                    break
+                else:
+                    break
+        elif GAME_TYPE == "host":
+            while True:
+                port = simpledialog.askstring("Port", "Please enter the host port.")
+                if not port:
+                    break
+                answer = messagebox.askyesno("Really host?", f"Are you sure you want to host at port {port}?")
+                if answer:
+                    netHandler.initialize('localhost', int(port), callbacklist)
+                    netHandler.start_server()
+                    allUnits.setNetHandler(netHandler)
+                    popup.destroy()
+                    break
+                else:
+                    break
+        else:
+            popup.destroy()
+            
+
+    popup = tk.Toplevel()
+    popup.title("Select Option")
+
+    popup.geometry("200x100")  # Set the size of the popup window
+
+    # Center the popup window on the main window
+    main_window_x = root.winfo_rootx()
+    main_window_y = root.winfo_rooty()
+    main_window_width = root.winfo_width()
+    main_window_height = root.winfo_height()
+
+    popup_width = 200
+    popup_height = 100
+
+    position_right = main_window_x + (main_window_width // 2) - (popup_width // 2)
+    position_down = main_window_y + (main_window_height // 2) - (popup_height // 2)
+
+    popup.geometry(f"{popup_width}x{popup_height}+{position_right}+{position_down}")
+    
+    tk.Label(popup, text="Choose an option:").pack(pady=10)
+
+    button_frame = tk.Frame(popup)
+    button_frame.pack(pady=10)
+
+    options = ["client", "host", "solo"]
+    for option in options:
+        button = tk.Button(button_frame, text=option, command=lambda opt=option: on_button_click(opt))
+        button.pack(side=tk.LEFT, padx=5)
+
+    popup.transient(root)
+    popup.grab_set()
+    root.wait_window(popup)
+
+get_connection_type()
 
 # Game initialization
 setup_battlefield(True)
@@ -615,6 +850,3 @@ setup_battlefield(True)
 
 
 root.mainloop()
-
-
-
