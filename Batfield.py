@@ -21,7 +21,7 @@ ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common eleme
 Flank_Unlock_Cost = 50
 PLAYER_START_HP = 5000
 CASH_PER_ROUND = 200
-AI_CASH_HANDICAP = 10
+AI_CASH_HANDICAP = 15
 
 
 #lists to carry the units on the battlefield
@@ -768,38 +768,109 @@ def show_winner(winner, HPloss = 0):
 #callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit}
 
 def get_connection_type(): #a popup window for the user to select solo or multiplayer
+    from tkinter import Tk, Toplevel, Label, Entry, Button
+    ip_addr = None
+    port = None
+    def get_host_info():
+        nonlocal ip_addr, port
+        # Create a Toplevel window for the dialog
+        dialog = tk.Toplevel(root)
+        dialog.title("Host Information")
+        
+        # Create labels and entry widgets for IP and Port
+        ip_label = tk.Label(dialog, text="IP Address:")
+        ip_label.grid(row=0, column=0, padx=10, pady=5)
+        ip_entry = tk.Entry(dialog)
+        ip_entry.grid(row=0, column=1, padx=10, pady=5)
+        
+        port_label = tk.Label(dialog, text="Port:")
+        port_label.grid(row=1, column=0, padx=10, pady=5)
+        port_entry = tk.Entry(dialog)
+        port_entry.grid(row=1, column=1, padx=10, pady=5)
+        
+        # Function to handle OK button press
+        def on_ok():
+            nonlocal ip_addr, port
+            ip_addr = ip_entry.get()
+            port = port_entry.get()
+            dialog.destroy()  # Close the dialog
+        
+        # Function to handle Cancel button press
+        def on_cancel():
+            nonlocal ip_addr, port
+            ip_addr = None
+            port = None
+            dialog.destroy()  # Close the dialog
+        
+        # Create OK and Cancel buttons
+        ok_button = tk.Button(dialog, text="OK", command=on_ok)
+        ok_button.grid(row=2, column=0, padx=10, pady=10)
+        
+        cancel_button = tk.Button(dialog, text="Cancel", command=on_cancel)
+        cancel_button.grid(row=2, column=1, padx=10, pady=10)
+
+        dialog.update_idletasks()  # Ensure window is updated before calculating its size
+
+        #make center the popup on the main window
+        popup_width = dialog.winfo_width()
+        popup_height = dialog.winfo_height()
+        main_window_x = root.winfo_rootx()
+        main_window_y = root.winfo_rooty()
+        main_window_width = root.winfo_width()
+        main_window_height = root.winfo_height()
+        x = main_window_x + (main_window_width // 2) - (popup_width // 2)
+        y = main_window_y + (main_window_height // 2) - (popup_height // 2)
+        
+        # Set the position of the dialog window
+        dialog.geometry(f"+{x}+{y}")
+
+        
+        # Make sure the dialog is displayed in front of root window
+        dialog.transient(root)
+        dialog.grab_set()
+        root.wait_window(dialog)
+
     def on_button_click(choice):
         global GAME_TYPE, netHandler, callbacklist, allUnits #this global variable stores the result of the popup
+        nonlocal ip_addr, port
         GAME_TYPE = choice
         
         if GAME_TYPE == "client":
             while True:
-                ip_addr = simpledialog.askstring("IP Address", "Please enter the host IP address.")
-                if not ip_addr:
-                    break
-                port = simpledialog.askstring("Port", "Please enter the host port.")
-                if not port:
+                get_host_info()
+                print("ip_addr, port",ip_addr,port)
+                if (not ip_addr) or (not port):
+                    host_ip = None
+                    port = None
                     break
                 answer = messagebox.askyesno("Host ready?", f"Press 'Yes' when the host at {ip_addr}:{port} has begun hosting")
+                
                 if answer:
-                    netHandler.initialize(ip_addr, int(port), callbacklist)
-                    netHandler.start_client()
-                    allUnits.setNetHandler(netHandler)
-                    popup.destroy()
-                    break
+                    try:
+                        netHandler.initialize(ip_addr, int(port), callbacklist)
+                        netHandler.start_client()
+                        allUnits.setNetHandler(netHandler)
+                        popup.destroy()
+                    except:
+                        print("Host was def not ready.")
+                    finally:
+                        break
                 else:
                     break
         elif GAME_TYPE == "host":
             while True:
                 port = simpledialog.askstring("Port", "Please enter the host port.")
                 if not port:
+                    host_ip = None
+                    port = None
                     break
                 answer = messagebox.askyesno("Really host?", f"Are you sure you want to host at port {port}?")
                 if answer:
                     netHandler.initialize('localhost', int(port), callbacklist)
-                    netHandler.start_server()
-                    allUnits.setNetHandler(netHandler)
-                    popup.destroy()
+                    connected = netHandler.start_server()
+                    if connected:
+                        allUnits.setNetHandler(netHandler)
+                        popup.destroy()
                     break
                 else:
                     break
