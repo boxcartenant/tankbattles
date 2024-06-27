@@ -6,6 +6,7 @@ import ast
 #import pickle
 import dill
 from bfield_unit import net_unit_archetype
+from tkinter import messagebox
 
 #Usage:
 #
@@ -61,15 +62,38 @@ class ServerClient:
         server_socket.bind((self.host, self.port))
         server_socket.listen(1)
         print("server is listening on port", self.port)
-        self.net_socket, addr = server_socket.accept()
-        print(f"connection from {addr} has been established.")
-        self.isServer = True
-        self.receive_thread = threading.Thread(target=self.handle_incoming, args=(self.net_socket,))
-        self.receive_thread.start()
-        self.processing_thread = threading.Thread(target=self.process_messages)
-        self.processing_thread.start()
-        self.send_thread = threading.Thread(target=self.send_messages)
-        self.send_thread.start()
+        connected = False
+        connectionCanceled = False
+        def serverListen(self, *arrrgs):
+            nonlocal connected, connectionCanceled, server_socket
+            while (not connected) and (not connectionCanceled):
+                try:
+                    server_socket.settimeout(10)
+                    self.net_socket, addr = server_socket.accept()
+                    print(f"connection from {addr} has been established.")
+                    connected = True
+                except Exception as e:
+                    print(str(e)+ ". Trying again.")
+                finally:
+                    server_socket.settimeout(None)
+        listeningthread = threading.Thread(target=serverListen, args = (self,))
+        listeningthread.start()
+        while (not connected) and (not connectionCanceled):
+            answer = messagebox.askyesno("Waiting for connection", f"Press 'Yes' when the client has connected, or 'No' to stop waiting.")
+            if answer:
+                connectionCanceled = False
+            else:
+                connectionCanceled = True
+                break
+        if connected:
+            self.isServer = True
+            self.receive_thread = threading.Thread(target=self.handle_incoming, args=(self.net_socket,))
+            self.receive_thread.start()
+            self.processing_thread = threading.Thread(target=self.process_messages)
+            self.processing_thread.start()
+            self.send_thread = threading.Thread(target=self.send_messages)
+            self.send_thread.start()
+        return connected
     
     def start_client(self):
         self.net_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
