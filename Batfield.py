@@ -38,6 +38,7 @@ canvas.pack()
 
 #Variables for communication with networked players
 net_player_ready = False
+NET_ROUND_END = False
 net_units = []
 GAME_TYPE = None # host, client, or solo
 netHandler = netcode.ServerClient() #will be a netcode.ServerClient object later.
@@ -293,6 +294,8 @@ def check_opponent_ready():
         root.after(500, ready_countdown)
 
 def ready_pb_click(event):
+    global NET_ROUND_END
+    NET_ROUND_END = False
     global root, countdown_text, readyButton, buy_NFlank_Btn, buy_SFlank_Btn, selected_troop_to_buy, temp_troop_to_buy, GAME_TYPE, net_player_ready, netHandler
     answer = messagebox.askyesno("Really ready?", "All done placing troops?")
     if answer:
@@ -521,6 +524,8 @@ def net_fixshot(payload): #called from within bfield_unit.py
     allUnits.fixed_shot(payload[0].team_color, payload[0].handle, payload[1])
 
 def net_win(payload):
+    global NET_ROUND_END
+    NET_ROUND_END = True
     #payload must be a list:
     #   list[0] must be a string, "Draw", "Red wins" or "Green wins"
     #   list[1] must be a number representing the lost HP for the losing player
@@ -532,7 +537,10 @@ def net_win(payload):
     #print(payload)
     show_winner(payload[0], payload[1])
 
-callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit,"shoot":net_fixshot, "win":net_win}
+def net_seed(payload):
+    random.seed(payload)
+
+callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit,"shoot":net_fixshot, "win":net_win, "seed":net_seed}
 
 #GUI Functions##############################################
 def setup_battlefield(new_battlefield = False):
@@ -566,6 +574,7 @@ def setup_battlefield(new_battlefield = False):
     else:
         redPlayer.changeCash(CASH_PER_ROUND)
     WINNER_DECLARED = False
+    
     #canvas.delete("all")
     canvas.update()
     setup_phase()
@@ -656,13 +665,14 @@ def ai_opponent():
 
 # Battle Resolution functions
 def resolve_battle():
-    global allUnits
+    global allUnits, NET_ROUND_END
     canvas.itemconfig(countdown_text, state="hidden")
     random.shuffle(units)
     allUnits.reset_shot_times()
     
     def update_frame():
-        global WINNER_DECLARED, allUnits
+        #the WINNER_DECLARED flag tells when the networked host has declared a winner, so the client will stop processing.
+        global NET_ROUND_END, allUnits
         #list the live tanks; not including the castle
 #        if len(list(allUnits.redUnits.values())) > 1:
 #            live_red_units = [tank for tank in list(allUnits.redUnits.values())[1:] if tank.alive]
@@ -696,31 +706,36 @@ def resolve_battle():
         #units_to_check = live_green_units + live_red_units
         #random.shuffle(units_to_check)
 
-        #run the unit AI's
-        for tank in allUnits.liveUnits:
-            #root.after(int(1000/FPS), tank.unit_AI())
-            tank_thread = threading.Thread(target=tank.unit_AI())
-            tank_thread.start()
-            #tank.unit_AI()
-        #keep doing update_frame until someone wins.
-        canvas.update()
-        root.after(int(1000/FPS), update_frame)
+        if NET_ROUND_END:
+            return
+        else:
+            #run the unit AI's
+            for tank in allUnits.liveUnits:
+                #root.after(int(1000/FPS), tank.unit_AI())
+                tank_thread = threading.Thread(target=tank.unit_AI())
+                tank_thread.start()
+                #tank.unit_AI()
+            #keep doing update_frame until someone wins.
+            canvas.update()
+            root.after(int(1000/FPS), update_frame)
 
-    if (len(allUnits.greenUnits)>1) or (len(allUnits.redUnits)>1):
+    #end of round conditions: one side has less than 2 units.
+    if NET_ROUND_END:
+        return
+    elif ((len(allUnits.greenUnits)>1) or (len(allUnits.redUnits)>1)):
         update_frame()
     else:
         show_winner("Draw")
-            
     # while not check_game_over():
     # .for i in range(len(maxunits)):
     # ..Execute unit AI (first_team[i])
     # ..Execute unit AI (second_team[i])
     # .destroy dead units
     # .delete bullet lines
-    pass
+
 
 def show_winner(winner, HPloss = 0):
-    global countdown_text, redPlayer, greenPlayer, allUnits
+    global WINNER_DECLARED, countdown_text, redPlayer, greenPlayer, allUnits
     # show who won the battle
     # subtract from player HP
     #print(winner)
@@ -870,6 +885,9 @@ def get_connection_type(): #a popup window for the user to select solo or multip
                     connected = netHandler.start_server()
                     if connected:
                         allUnits.setNetHandler(netHandler)
+                        seed = random.randint(0,2**31 - 1)
+                        random.seed(seed)
+                        netHandler.send("seed",seed)
                         popup.destroy()
                     break
                 else:
@@ -910,6 +928,7 @@ def get_connection_type(): #a popup window for the user to select solo or multip
     popup.transient(root)
     popup.grab_set()
     root.wait_window(popup)
+
 
 get_connection_type()
 
