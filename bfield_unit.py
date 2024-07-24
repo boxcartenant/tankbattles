@@ -111,7 +111,7 @@ TROOP_TYPES = {
     "Homebase": {
         "range": 400.0,
         "shotcolor": "black",
-        "damage": 30.0,
+        "damage": 50.0,
         "rate": 30.0,
         "shotcount": 1,
         "spread": 0.0, 
@@ -261,11 +261,16 @@ allUnits = UnitManager()
 TEAM_COLORS = {"Green": Image.open("GreenTankSprites.png"), "Red": Image.open("RedTankSprites.png")}
 
 def calculate_shot_line(shooting_unit_x, shooting_unit_y, target_unit_x, target_unit_y, shooting_range, spread_factor):
+    global THIS_IS_A_CLIENT
     # Calculate angle to the target
     angle_to_target = math.atan2(target_unit_y - shooting_unit_y, target_unit_x - shooting_unit_x)
     
     # Apply spread factor to the angle (randomize within the spread range)
-    spread_angle = angle_to_target + math.radians(random.uniform(-spread_factor, spread_factor))
+    if THIS_IS_A_CLIENT:
+        #clients should see the offset mirrored.
+        spread_angle = angle_to_target + math.radians(-random.uniform(-spread_factor, spread_factor))
+    else:
+        spread_angle = angle_to_target + math.radians(random.uniform(-spread_factor, spread_factor))
     
     # Calculate endpoint of the line within shooting range
     end_x = shooting_unit_x + shooting_range * math.cos(spread_angle)
@@ -352,8 +357,7 @@ class Unit:
         global THIS_IS_A_CLIENT
         if self.alive:
             #server sends targets to clients.
-            if not THIS_IS_A_CLIENT:
-                self.check_for_targets()
+            self.check_for_targets()
             #if there's a target, find out if it's in range.
             if (self.target_unit is not None):
                 targdistance = ((self.xc - self.target_unit.xc) ** 2 + (self.yc - self.target_unit.yc) ** 2) ** 0.5
@@ -456,7 +460,7 @@ class Unit:
                 if (self.target_unit is None) and (not WINNER_DECLARED):
                     WINNER_DECLARED = True
                     print(self.team_color, "wins!")
-                elif self.target_unit and THIS_IS_A_SERVER:
+                elif self.target_unit:
                     #print("serverunit: setting target:",self.handle, self.target_unit.handle)
                     self.manager.net_send("target", [net_unit_archetype(unit = self),self.target_unit.handle])
             #if the target is in range, shoot it
@@ -493,8 +497,8 @@ class Unit:
             for i in range(TROOP_TYPES[troop_type]["shotcount"]):
                 #get an endpoint for the bullet, accounting for spread
                 x1, y1 = calculate_shot_line(x0, y0, target_unit.xc, target_unit.yc, TROOP_TYPES[troop_type]["range"], TROOP_TYPES[troop_type]["spread"])
-                if THIS_IS_A_SERVER:
-                    net_bullets.append([x1,y1])
+                #if THIS_IS_A_SERVER:
+                #    net_bullets.append([x1,y1])
                 #calculate the vector components of the shot line
                 dx, dy = x1 - x0, y1 - y0
                 #get the unit vector
@@ -511,9 +515,9 @@ class Unit:
                 bullet_id.append([mybid, vx, vy, sm, False, 0, 0])
             self.simulshots -= 1
             #animate the bullets
-            if THIS_IS_A_SERVER:
+            #if THIS_IS_A_SERVER:
                 #print("serverunit: sending shots")
-                self.manager.net_send("shoot", [net_unit_archetype(unit = self),net_bullets])
+                #self.manager.net_send("shoot", [net_unit_archetype(unit = self),net_bullets])
                 #print("serverunit: shots sent")
             self.grow_bullets(bullet_id, steps, x0, y0)
         except Exception as e:
