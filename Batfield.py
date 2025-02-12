@@ -1,5 +1,5 @@
 import tkinter as tk
-from bfield_unit import Unit, allUnits, TROOP_TYPES, WINNER_DECLARED, TEAM_COLORS, UNIT_SIZE, net_unit_archetype
+from bfield_unit import Unit, allUnits, TROOP_TYPES, AI_TEAM_COMPS, WINNER_DECLARED, TEAM_COLORS, UNIT_SIZE, net_unit_archetype
 import math
 from tkinter.font import Font
 from PIL import Image, ImageTk
@@ -19,9 +19,11 @@ ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common eleme
 # 0 hb top, 1 bot, 2 flank top, 3 bot, 4 home top, 5 bot, 6 flank top, 7 bot, 8 ctl top, 9 bot
 
 Flank_Unlock_Cost = 50
-PLAYER_START_HP = 5000
+PLAYER_START_HP = 4000
+PLAYER_HP_PER_ROUND = 200
 CASH_PER_ROUND = 200
 AI_CASH_HANDICAP = 15
+SOLO_AI_TEAM_COMP = (20,20,20,20,20,0)
 
 
 #lists to carry the units on the battlefield
@@ -570,7 +572,9 @@ def setup_battlefield(new_battlefield = False):
         allUnits.reinitialize_units()
     greenPlayer.changeCash(CASH_PER_ROUND)
     if GAME_TYPE == "solo":
+        #print("cash per round",CASH_PER_ROUND,"\nhandicap",AI_CASH_HANDICAP,"current cash",redPlayer.cash)
         redPlayer.changeCash(CASH_PER_ROUND+AI_CASH_HANDICAP)
+        #print("new cash",redPlayer.cash)
     else:
         redPlayer.changeCash(CASH_PER_ROUND)
     WINNER_DECLARED = False
@@ -621,11 +625,12 @@ def net_opponent():
     resolve_battle()
 
 def ai_opponent():
-    global canvas, redPlayer, redHome, redFlankN, redFlankS, Flank_Unlock_Cost, UNIT_SIZE    # while there's money in the ai opponent bank
+    global canvas, redPlayer, redHome, redFlankN, redFlankS, Flank_Unlock_Cost, UNIT_SIZE, SOLO_AI_TEAM_COMP, TROOP_TYPES
+    # while there's money in the ai opponent bank
     #   spend it on tanks, randomly place on board
     while True:
         #decide whether to buy a flank or a unit
-        decision = random.choice(["flank", "troop"])
+        decision = random.choices(["flank", "troop"], weights=(20,80), k=1)[0]
         if (decision == "flank") and (redPlayer.cash > Flank_Unlock_Cost) and (not (redFlankS.unlocked and redFlankN.unlocked)):
             decision = ["n", "s"]
             if ((decision == "n") and (not redFlankN.unlocked)) or redFlankS.unlocked:
@@ -639,11 +644,14 @@ def ai_opponent():
         else:
             #if the flanks are already unlocked, or there isn't enough cash for it, try troops.
             #make a list of the troops we can afford.
-            troop_choices = [troop for troop, info in TROOP_TYPES.items() if redPlayer.cash > info["cost"]]
+            #troop_choices = [troop for troop, info in TROOP_TYPES.items() if redPlayer.cash > info["cost"]] #old way
+            troop_choices = [(troop, weight) for weight, (troop, info) in zip(SOLO_AI_TEAM_COMP, TROOP_TYPES.items()) if redPlayer.cash > info["cost"]]
             if troop_choices:
-                troop_type = random.choice(troop_choices)
+                #troop_type = random.choice(troop_choices) #old way
+                troops, weights = zip(*troop_choices)
+                troop_type = random.choices(troops, weights=weights, k=1)[0]
                 if redPlayer.changeCash(0-TROOP_TYPES[troop_type]["cost"]):
-                    troop_type = random.choice(list(troop_choices))
+                    #troop_type = random.choice(list(troop_choices))
                     #decide which location to put the troops
                     locOptions = [[redHome.x1, redHome.y1, redHome.x2, redHome.y2]]
                     if redFlankS.unlocked:
@@ -734,8 +742,8 @@ def resolve_battle():
     # .delete bullet lines
 
 
-def show_winner(winner, HPloss = 0):
-    global WINNER_DECLARED, countdown_text, redPlayer, greenPlayer, allUnits
+def show_winner(winner, HPloss = PLAYER_HP_PER_ROUND):
+    global WINNER_DECLARED, countdown_text, redPlayer, greenPlayer, allUnits, PLAYER_HP_PER_ROUND
     # show who won the battle
     # subtract from player HP
     #print(winner)
@@ -781,6 +789,71 @@ def show_winner(winner, HPloss = 0):
 #GAME_TYPE = None # host, client, or solo
 #netHandler = None #will be a netcode.ServerClient object later.
 #callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit}
+
+def get_ai_comp(): #a popup window for the user to select solo or multiplayer
+    from tkinter import Tk, Toplevel, Label, Entry, Button, ttk
+    global SOLO_AI_TEAM_COMP, AI_TEAM_COMPS, AI_CASH_HANDICAP
+
+    def on_confirm():
+        global AI_CASH_HANDICAP, AI_TEAM_COMPS, SOLO_AI_TEAM_COMP
+        selected_option = combo_var.get()
+        if selected_option in AI_TEAM_COMPS:
+            SOLO_AI_TEAM_COMP = AI_TEAM_COMPS[selected_option]
+
+        try:
+            AI_CASH_HANDICAP = int(handicap_var.get())
+        except ValueError:
+            print("error:",ValueError)
+            AI_CASH_HANDICAP = 15  # Default to 15 if invalid input
+            
+        popup.destroy()
+        
+    popup = tk.Toplevel()
+    popup.title("Select Enemy")
+    popup.geometry("250x180")
+
+    # Center the popup window on the main window
+    main_window_x = root.winfo_rootx()
+    main_window_y = root.winfo_rooty()
+    main_window_width = root.winfo_width()
+    main_window_height = root.winfo_height()
+
+    popup_width = 250
+    popup_height = 180
+    
+    position_right = main_window_x + (main_window_width // 2) - (popup_width // 2)
+    position_down = main_window_y + (main_window_height // 2) - (popup_height // 2)
+
+    popup.geometry(f"{popup_width}x{popup_height}+{position_right}+{position_down}")
+    
+    tk.Label(popup, text="Choose an enemy:").pack(pady=5)
+
+    combo_values = list(AI_TEAM_COMPS.keys())
+    combo_var = tk.StringVar(value=combo_values[0] if combo_values else "")
+    combo = ttk.Combobox(popup, textvariable=combo_var, values=combo_values, state="readonly")
+    combo.pack(pady=5)
+
+    tk.Label(popup, text="AI Handicap:").pack(pady=5)
+    
+    handicap_var = tk.StringVar(value=str(AI_CASH_HANDICAP))
+    handicap_entry = tk.Entry(popup, textvariable=handicap_var)
+    handicap_entry.pack(pady=5)
+    
+    confirm_button = tk.Button(popup, text="Confirm", command=on_confirm)
+    confirm_button.pack(pady=5)
+
+    #button_frame = tk.Frame(popup)
+    #button_frame.pack(pady=10)
+
+    #options = AI_TEAM_COMPS.keys()
+    #for option in options:
+    #    button = tk.Button(button_frame, text=option, command=lambda opt=option: on_button_click(opt))
+    #    button.pack(side=tk.LEFT, padx=5)
+
+    popup.transient(root)
+    popup.grab_set()
+    root.wait_window(popup)
+
 
 def get_connection_type(): #a popup window for the user to select solo or multiplayer
     from tkinter import Tk, Toplevel, Label, Entry, Button
@@ -893,6 +966,7 @@ def get_connection_type(): #a popup window for the user to select solo or multip
                 else:
                     break
         else:
+            get_ai_comp()
             popup.destroy()
             
 
@@ -940,3 +1014,6 @@ setup_battlefield(True)
 
 
 root.mainloop()
+
+
+
