@@ -157,13 +157,23 @@ class BattleGrid:
         """Updates the unit's position in the grid."""
         new_keys = self._get_cell_keys(unit.x, unit.y, UNIT_SIZE)
         old_keys = getattr(unit, 'grid_keys', set())
-        
+        #print(unit.handle)
         if new_keys != old_keys:
             for key in old_keys:
                 self.grid[key].discard(unit)
             for key in new_keys:
                 self.grid[key].add(unit)
             unit.grid_keys = new_keys
+        for key, units in self.grid.items():
+            unit_list = [f"Unit(id={id(unit)}, team={unit.team_color}, pos=({unit.x}, {unit.y}))" for unit in units]
+            print(f"Cell {key}: {', '.join(unit_list) if unit_list else 'Empty'}")
+            
+
+    def remove_unit(self, unit):
+        """Removes a unit from the grid."""
+        for key in getattr(unit, 'grid_keys', set()):
+            self.grid[key].discard(unit)
+        unit.grid_keys = set()
 
     def check_bullet_hit(self, x0, y0, x1, y1,shooter_team):
         """Checks which unit (if any) is hit by a bullet traveling from (x0, y0) to (x1, y1)."""
@@ -266,18 +276,17 @@ class UnitManager():
             self.battlefield.update_unit(thisUnit)
         return handle
 
+
     def reinitialize_units(self):
-        self.battlefield.clear_grid()
+        #self.battlefield.clear_grid()
         for unit in self.greenUnits.values():
             unit.reinitialize()
             self.liveGreenUnits[unit.handle] = unit
             self.liveUnits.append(unit)
-            self.battlefield.update_unit(unit)
         for unit in self.redUnits.values():
             unit.reinitialize()
             self.liveRedUnits[unit.handle] = unit
             self.liveUnits.append(unit)
-            self.battlefield.update_unit(unit)
         random.shuffle(self.liveUnits)
 
     def reset_shot_times(self):
@@ -405,6 +414,7 @@ class Unit:
         self.y = self.startingY
         self.yc = self.y+UNIT_SIZE/2
         self.v = TROOP_TYPES[self.troop_type]["speed"]
+        self.manager.battlefield.update_unit(self)
         self.sprite = self.get_sprite()
         self.canvas.itemconfig(self.id, image=self.sprite)
         self.target_unit = None
@@ -479,6 +489,7 @@ class Unit:
             else:
                 del self.manager.liveRedUnits[self.handle]
             self.manager.liveUnits = list(self.manager.liveGreenUnits.values()) + list(self.manager.liveRedUnits.values())
+            self.manager.battlefield.remove_unit(self)
             random.shuffle(self.manager.liveUnits)
             sprite_x = 0
             sprite_y = len(list(TROOP_TYPES.keys())) * UNIT_SIZE #past the bottom index is a "dead" overlay
