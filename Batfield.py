@@ -19,7 +19,7 @@ ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common eleme
 # 0 hb top, 1 bot, 2 flank top, 3 bot, 4 home top, 5 bot, 6 flank top, 7 bot, 8 ctl top, 9 bot
 
 Flank_Unlock_Cost = 50
-PLAYER_START_HP = 4000
+PLAYER_START_HP = 5000
 PLAYER_HP_PER_ROUND = 200
 CASH_PER_ROUND = 200
 AI_CASH_HANDICAP = 15
