@@ -20,7 +20,7 @@ ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common eleme
 
 Flank_Unlock_Cost = 50
 PLAYER_START_HP = 4000
-PLAYER_HP_PER_ROUND = 0
+PLAYER_HP_PER_ROUND = 200
 CASH_PER_ROUND = 200
 AI_CASH_HANDICAP = 15
 SOLO_AI_TEAM_COMP = (20,20,20,20,20,0)
@@ -751,9 +751,9 @@ def show_winner(winner, HPloss = PLAYER_HP_PER_ROUND):
     # subtract from player HP
     #print(winner)
     calcLoss = True
-    if HPloss != 0:
-        #print("received HPloss:", HPloss)
-        calcLoss = False
+    #if HPloss != 0: #this if statement makes it so you don't account for tank HP when calculating opponent hp loss.
+    #    #print("received HPloss:", HPloss)
+    #    calcLoss = False
     gameover = False
     if winner == "Green Wins":
         if calcLoss:
