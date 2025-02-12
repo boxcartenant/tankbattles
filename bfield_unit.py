@@ -164,9 +164,9 @@ class BattleGrid:
             for key in new_keys:
                 self.grid[key].add(unit)
             unit.grid_keys = new_keys
-        for key, units in self.grid.items():
-            unit_list = [f"Unit(id={id(unit)}, team={unit.team_color}, pos=({unit.x}, {unit.y}))" for unit in units]
-            print(f"Cell {key}: {', '.join(unit_list) if unit_list else 'Empty'}")
+        #for key, units in self.grid.items():
+        #    unit_list = [f"Unit(id={id(unit)}, team={unit.team_color}, pos=({unit.x}, {unit.y}))" for unit in units]
+        #    print(f"Cell {key}: {', '.join(unit_list) if unit_list else 'Empty'}")
             
 
     def remove_unit(self, unit):
