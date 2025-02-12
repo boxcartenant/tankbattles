@@ -20,7 +20,7 @@ ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common eleme
 
 Flank_Unlock_Cost = 50
 PLAYER_START_HP = 4000
-PLAYER_HP_PER_ROUND = 200
+PLAYER_HP_PER_ROUND = 0
 CASH_PER_ROUND = 200
 AI_CASH_HANDICAP = 15
 SOLO_AI_TEAM_COMP = (20,20,20,20,20,0)
@@ -569,7 +569,10 @@ def setup_battlefield(new_battlefield = False):
         greenPlayer.reinitialize()
         redPlayer.reinitialize()
     else:
-        allUnits.reinitialize_units()
+        try:
+            allUnits.reinitialize_units()
+        except Exception as e:
+            print("exception in setup_battlefield:",e)
     greenPlayer.changeCash(CASH_PER_ROUND)
     if GAME_TYPE == "solo":
         #print("cash per round",CASH_PER_ROUND,"\nhandicap",AI_CASH_HANDICAP,"current cash",redPlayer.cash)
