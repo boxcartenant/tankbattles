@@ -7,6 +7,8 @@ import threading
 import concurrent.futures
 import math
 import copy
+from collections import defaultdict
+
 
 #debugging variables. will be removed in final release.
 SYMMETRICAL_TEAMS = False #Set to false if you want random team comp and placement.
@@ -32,6 +34,7 @@ THIS_IS_A_SERVER = False #is this a server in a network game?
 # - - make sure the "homebase" is always the last index.
 # - add a new sprite to the spritesheet. 
 # - - make sure the homebase and dead-tank are the bottom two sprites.
+# - update AI_TEAM_COMPS to have the new unit
 # Done! It will populate the shop buttons and everything else for you.
 
 #callbacklist = {
@@ -41,6 +44,17 @@ THIS_IS_A_SERVER = False #is this a server in a network game?
 # "target":net_targetunit,
 # "shoot":net_fixshot
 #}
+
+# canon, chaingun, missile, laser, shotgun, base
+AI_TEAM_COMPS = {
+    "Mall Cop": (20,20,20,20,20,0),
+    "Turtle": (40,10,20,20,10,0),
+    "Snapper": (40,20,10,10,20,0),
+    "Tosser": (20,5,35,35,5,0),
+    "Rusher": (5,35,5,10,35,0),
+    "Spread": (5,10,35,5,35,0)
+    }
+    
 
 TROOP_TYPES = {
     "Canon": {
@@ -123,10 +137,71 @@ TROOP_TYPES = {
     }
 }
 
+class BattleGrid:
+    def __init__(self, grid_size = 50):
+        global WIDTH, HEIGHT, UNIT_SIZE
+        self.grid_size = grid_size
+        self.cols = int(math.ceil(WIDTH / grid_size))
+        self.rows = int(math.ceil(HEIGHT / grid_size))
+        self.grid = defaultdict(set)  # Keys are (grid_x, grid_y), values are sets of Unit objects
 
+    def _get_cell_keys(self, x, y, size):
+        """Returns a set of grid keys the unit overlaps based on its top-left (x, y) and size."""
+        min_x = int(x // self.grid_size)
+        min_y = int(y // self.grid_size)
+        max_x = int((x + size) // self.grid_size)
+        max_y = int((y + size) // self.grid_size)
+        return {(gx, gy) for gx in range(min_x, max_x + 1) for gy in range(min_y, max_y + 1)}
+
+    def update_unit(self, unit):
+        """Updates the unit's position in the grid."""
+        new_keys = self._get_cell_keys(unit.x, unit.y, UNIT_SIZE)
+        old_keys = getattr(unit, 'grid_keys', set())
+        
+        if new_keys != old_keys:
+            for key in old_keys:
+                self.grid[key].discard(unit)
+            for key in new_keys:
+                self.grid[key].add(unit)
+            unit.grid_keys = new_keys
+
+    def check_bullet_hit(self, x0, y0, x1, y1,shooter_team):
+        """Checks which unit (if any) is hit by a bullet traveling from (x0, y0) to (x1, y1)."""
+        minx, maxx = sorted([x0, x1])
+        miny, maxy = sorted([y0, y1])
+        
+        # Determine relevant grid cells
+        min_cell_x, max_cell_x = int(minx // self.grid_size), int(maxx // self.grid_size)
+        min_cell_y, max_cell_y = int(miny // self.grid_size), int(maxy // self.grid_size)
+        
+        checked_units = set()
+        hit_unit = None
+        lowd = float('inf')
+        d = 0
+
+        for gx in range(min_cell_x, max_cell_x + 1):
+            for gy in range(min_cell_y, max_cell_y + 1):
+                for unit in self.grid.get((gx, gy), []):
+                    if unit in checked_units or unit.team_color == shooter_team:
+                        continue
+                    checked_units.add(unit)
+                    
+                    # Bounding box check
+                    if minx <= unit.x + UNIT_SIZE and maxx >= unit.x and miny <= unit.y + UNIT_SIZE and maxy >= unit.y:
+                        d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
+                        if d < lowd:
+                            lowd = d
+                            hit_unit = unit
+        
+        return d,hit_unit
+    
+    def clear_grid(self):
+        """Removes all units from the grid."""
+        self.grid.clear()
 
 class UnitManager():
     def __init__(self):
+        self.battlefield = BattleGrid()
         self.greenUnits = {}
         self.redUnits = {}
         self.liveUnits = []
@@ -160,8 +235,8 @@ class UnitManager():
         if team_color.lower() == "green":
             self.add_green(x, y, troop_type, handle)
         else:
-            thisUnit = self.add_red(x, y, troop_type, handle)
-        handle
+            self.add_red(x, y, troop_type, handle)
+        return handle
             
     def add_green(self, x, y, troop_type, handle = None):
         if handle is None:
@@ -174,6 +249,7 @@ class UnitManager():
             self.liveGreenUnits[handle] = thisUnit
             self.liveUnits.append(thisUnit)
             random.shuffle(self.liveUnits)
+            self.battlefield.update_unit(thisUnit)
         return handle
 
     def add_red(self, x, y, troop_type, handle = None):
@@ -187,17 +263,21 @@ class UnitManager():
             self.liveRedUnits[handle] = thisUnit
             self.liveUnits.append(thisUnit)
             random.shuffle(self.liveUnits)
+            self.battlefield.update_unit(thisUnit)
         return handle
 
     def reinitialize_units(self):
+        self.battlefield.clear_grid()
         for unit in self.greenUnits.values():
             unit.reinitialize()
             self.liveGreenUnits[unit.handle] = unit
             self.liveUnits.append(unit)
+            self.battlefield.update_unit(unit)
         for unit in self.redUnits.values():
             unit.reinitialize()
             self.liveRedUnits[unit.handle] = unit
             self.liveUnits.append(unit)
+            self.battlefield.update_unit(unit)
         random.shuffle(self.liveUnits)
 
     def reset_shot_times(self):
@@ -256,6 +336,7 @@ class UnitManager():
             del unit
         self.greenUnits = {}
         self.redUnits = {}
+        self.battlefield.clear_grid()
 
 allUnits = UnitManager()
 TEAM_COLORS = {"Green": Image.open("GreenTankSprites.png"), "Red": Image.open("RedTankSprites.png")}
@@ -424,6 +505,7 @@ class Unit:
         if not(newy < 0 or y2 > HEIGHT):
             self.y = newy
             self.yc = self.y+UNIT_SIZE/2
+        self.manager.battlefield.update_unit(self)
         #I lock the healthbar whenever we move, because sometimes healthbar ghosts were being left behind if a unit was attacked while it moved.
         self.lock.acquire()
         self.canvas.coords(self.id, round(self.x), round(self.y))
@@ -567,7 +649,7 @@ class Unit:
                         vx = bullet[1]*bullet[3]
                         vy = bullet[2]*bullet[3]
                         #the target's health is depleated inside self.check_bullet_hit
-                        d = self.check_bullet_hit(x0 + vx*b, y0 + vy*b, x0 + vx*(b+1), y0 + vy*(b+1))
+                        d, hitunit = self.manager.battlefield.check_bullet_hit(x0 + vx*b, y0 + vy*b, x0 + vx*(b+1), y0 + vy*(b+1), self.team_color)
                         #d = distance to target if hit, else 0
                         if (d==0):
                             xmag = vx*(b+1)
@@ -586,6 +668,10 @@ class Unit:
                             self.canvas.coords(bullet[0], x0, y0, x0 + xmag, y0 + ymag)
                             #self.canvas.update()
                             #self.lock.release()
+                        if hitunit is not None:
+                            #print(hitunit.remainingHP)
+                            hitunit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
+                            hitunit = None
                 time.sleep(0.05)  # Adjust speed here
             time.sleep(0.2) #show the bullet a little longer for the user to see it.
             #self.lock.acquire()
@@ -595,11 +681,13 @@ class Unit:
             #self.lock.release()
             del bullet_id
         except Exception as e:
-            print(e)
+            print("something broke in grow_bullets:",e)
         self.simulshots += 1
         return
         
     def check_bullet_hit(self, x0, y0, x1, y1):
+        #this function has been replaced by BattleGrid.check_bullet_hit
+        # which in practice is this.manager.battlefield.check_bullet_hit.
         try:
             global allUnits
             minx = min(x0, x1)
@@ -636,7 +724,7 @@ class Unit:
                 #self.canvas.after(1, lambda pop=0-TROOP_TYPES[self.troop_type]["damage"]: hitunit.HPMod(pop))
                 return lowd
         except Exception as e:
-            print(e)
+            print("something broke in check_bullet_hit:",e)
         return 0
     
     def enter(self, event=None):
