@@ -47,16 +47,33 @@ THIS_IS_A_SERVER = False #is this a server in a network game?
 
 # canon, chaingun, missile, laser, shotgun, base
 AI_TEAM_COMPS = {
-    "Mall Cop": (20,20,20,20,20,0),
-    "Turtle": (40,10,20,20,10,0),
-    "Snapper": (40,20,10,10,20,0),
-    "Tosser": (20,5,35,35,5,0),
-    "Rusher": (5,35,5,10,35,0),
-    "Spread": (5,10,35,5,35,0)
+    "Mall Cop": (20,20,20,20,20,20,0),
+    "Turtle": (40,40,10,20,20,10,0),
+    "Snapper": (40,40,20,10,10,20,0),
+    "Tosser": (18,20,5,35,35,5,0),
+    "Rusher": (5, 5,35,5,10,35,0),
+    "Spread": (10,5,10,35,5,35,0),
+    "Scalpel": (0,60,0,0,40,0,0),
+    "Nuke": (0,20,0,80,0,0,0),
+    "Shotties": (0,0,0,0,0,100,0),
+    "Trigun": (100,0,0,0,0,0,0)
     }
     
 
 TROOP_TYPES = {
+    "Tri-Shot": {
+        "range": 150.0,  # pixels
+        "shotcolor": "green",
+        "damage": 10.0,
+        "rate": 3.0, # seconds between shots
+        "shotcount": 3, # how many bullets come out in one shot
+        "spread": 5.0, # size of shot cone (degrees)
+        "HP": 100.0,
+        "speed": 0.8, # tank movement speed in pixels
+        "bulletspeed": 40, 
+        "simulshots": 1, # how many times the gun can shoot again while it still has bullets in the air
+        "cost": 60
+    },
     "Canon": {
         "range": 200.0,  # pixels
         "shotcolor": "blue",
