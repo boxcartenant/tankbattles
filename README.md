@@ -15,7 +15,7 @@ To play the game, put all the files in one folder and run Batfield.py. If you ju
 
 ![image info](screenshots/Screenshot1.png)
 ![image info](screenshots/Screenshot2.png)
-![image info](screenshots/Screenshot3.png)
+![image info](screenshots/Screenshot4.png)
 
 To do:
 - client/server fine-tuning
