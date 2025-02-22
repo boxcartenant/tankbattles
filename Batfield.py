@@ -157,14 +157,30 @@ class Shop_Troop_Button:
         self.wait_id = None
         self.tw = None
         #make the button rectangle
-        self.button_id = self.canvas.create_rectangle(x1, y1, x2, y2, fill='gray', outline='black')
+        self.button_id = self.canvas.create_rectangle(x1, y1, x2, y2, fill='gray', outline='red', width = 5)
         self.canvas.tag_bind(self.button_id, "<Button-1>", self.button_click)
         self.canvas.tag_bind(self.button_id, "<Enter>", self.enter)
         self.canvas.tag_bind(self.button_id, "<Leave>", self.leave)
         #make a troop icon on it
+      #  sprite_y = list(TROOP_TYPES.keys()).index(troop_type) * UNIT_SIZE
+      #  self.unitsprite = ImageTk.PhotoImage(TEAM_COLORS["Green"].crop((0, sprite_y, UNIT_SIZE, sprite_y + UNIT_SIZE)))
+      #  self.button_image = canvas.create_image(self.xc, self.yc, image=self.unitsprite, anchor=tk.CENTER)
         sprite_y = list(TROOP_TYPES.keys()).index(troop_type) * UNIT_SIZE
-        self.unitsprite = ImageTk.PhotoImage(TEAM_COLORS["Green"].crop((0, sprite_y, UNIT_SIZE, sprite_y + UNIT_SIZE)))
+
+        # Crop the sprite
+        sprite = TEAM_COLORS["Green"].crop((0, sprite_y, UNIT_SIZE, sprite_y + UNIT_SIZE))
+
+        # Scale it up (e.g., 2x larger)
+        scale_factor = 2
+        new_size = (UNIT_SIZE * scale_factor, UNIT_SIZE * scale_factor)
+        sprite = sprite.resize(new_size, Image.NEAREST)  # Use NEAREST to keep pixelated look
+
+        # Convert to Tkinter-compatible image
+        self.unitsprite = ImageTk.PhotoImage(sprite)
+
+        # Create the button image
         self.button_image = canvas.create_image(self.xc, self.yc, image=self.unitsprite, anchor=tk.CENTER)
+        #################end new code
         canvas.tag_bind(self.button_image, "<Button-1>", self.button_click)
         self.canvas.tag_bind(self.button_image, "<Enter>", self.enter)
         self.canvas.tag_bind(self.button_image, "<Leave>", self.leave)
@@ -184,7 +200,7 @@ class Shop_Troop_Button:
 
     def set_selected(self, selected=True):
         if selected:
-            self.canvas.itemconfig(self.button_id, outline='black')
+            self.canvas.itemconfig(self.button_id, outline='red')
         else:
             self.canvas.itemconfig(self.button_id, outline='light gray')
 
@@ -575,6 +591,8 @@ def setup_battlefield(new_battlefield = False):
             print("exception in setup_battlefield:",e)
     greenPlayer.changeCash(CASH_PER_ROUND)
     if GAME_TYPE == "solo":
+        if new_battlefield:
+            get_ai_comp()
         #print("cash per round",CASH_PER_ROUND,"\nhandicap",AI_CASH_HANDICAP,"current cash",redPlayer.cash)
         redPlayer.changeCash(CASH_PER_ROUND+AI_CASH_HANDICAP)
         #print("new cash",redPlayer.cash)
@@ -652,7 +670,10 @@ def ai_opponent():
             if troop_choices:
                 #troop_type = random.choice(troop_choices) #old way
                 troops, weights = zip(*troop_choices)
-                troop_type = random.choices(troops, weights=weights, k=1)[0]
+                try:
+                    troop_type = random.choices(troops, weights=weights, k=1)[0]
+                except Exception as e:
+                    break #probably all the weights were zero.
                 if redPlayer.changeCash(0-TROOP_TYPES[troop_type]["cost"]):
                     #troop_type = random.choice(list(troop_choices))
                     #decide which location to put the troops
@@ -969,7 +990,6 @@ def get_connection_type(): #a popup window for the user to select solo or multip
                 else:
                     break
         else:
-            get_ai_comp()
             popup.destroy()
             
 
