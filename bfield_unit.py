@@ -8,6 +8,8 @@ import concurrent.futures
 import math
 import copy
 from collections import defaultdict
+from bfield_effects import effects_manager
+from config import WIDTH, HEIGHT, UNIT_SIZE, FPS
 
 
 #debugging variables. will be removed in final release.
@@ -17,10 +19,6 @@ NUMBER_OF_UNITS = 100#units per team
 
 # Constants
 WINNER_DECLARED = False
-WIDTH = 1024
-HEIGHT = 768
-UNIT_SIZE = 16
-FPS = 30  # Maximum frame rate
 UNIT_THREAD_COUNT = 2
 
 THIS_IS_A_CLIENT = False #is this a client in a network game?
@@ -55,8 +53,8 @@ AI_TEAM_COMPS = {
     "Spread": (10,5,10,35,5,35,0),
     "Scalpel": (0,60,0,0,40,0,0),
     "Nuke": (0,20,0,80,0,0,0),
-    "Shotties": (0,0,0,0,0,100,0),
-    "Trigun": (100,0,0,0,0,0,0)
+    "Shotties": (5,5,5,5,5,70,5),
+    "Trigun": (70,5,5,5,5,5,5)
     }
     
 
@@ -406,6 +404,8 @@ class Unit:
         self.canvas.tag_bind(self.id, "<Enter>", self.enter)
         self.canvas.tag_bind(self.id, "<Leave>", self.leave)
         self.target_unit = None
+        self.maxHP = TROOP_TYPES[troop_type]["HP"]
+        self.damage = TROOP_TYPES[troop_type]["damage"]
         self.futures = [] #future objects as returned by the executor
         self.alive = True
         self.remainingHP = TROOP_TYPES[troop_type]["HP"]
@@ -521,6 +521,8 @@ class Unit:
         dx = self.target_unit.xc - self.xc
         dy = self.target_unit.yc - self.yc
         d = ((dx) ** 2 + (dy) ** 2) ** 0.5
+        if d < UNIT_SIZE:
+            return
         vx = dx/d
         vy = dy/d
         newx = self.x + self.v*vx
@@ -668,6 +670,14 @@ class Unit:
         return
 
     def grow_bullets(self, bullet_id, steps, x0, y0):
+        #Bullet_id is a list of bullets.
+        #a bullet is a list of junk. Here are the traits:
+        # [mybid, vx, vy, sm, False, 0, 0]
+        #  mybid is "my bullet id", the actual id of the bullet.
+        #  vx and vy are velocities
+        #  sm is "step magnitude", which manages the speed of the bullet
+        #  the False means the bullet hasn't hit anything yet.
+        #  idr what the 0, 0 mean. 
         try:
             for b in range(steps):
                 for bullet in bullet_id:
@@ -676,6 +686,9 @@ class Unit:
                         #basic attack vector
                         vx = bullet[1]*bullet[3]
                         vy = bullet[2]*bullet[3]
+                        if effects_manager.check_bullet_hit(x0 + vx*b, y0 + vy*b, x0 + vx*(b+1), y0 + vy*(b+1), self.team_color):
+                            bullet[4] = True  # Bullet blocked
+                            continue
                         #the target's health is depleated inside self.check_bullet_hit
                         d, hitunit = self.manager.battlefield.check_bullet_hit(x0 + vx*b, y0 + vy*b, x0 + vx*(b+1), y0 + vy*(b+1), self.team_color)
                         #d = distance to target if hit, else 0
@@ -698,7 +711,7 @@ class Unit:
                             #self.lock.release()
                         if hitunit is not None:
                             #print(hitunit.remainingHP)
-                            hitunit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
+                            hitunit.HPMod(0-self.damage)
                             hitunit = None
                 time.sleep(0.05)  # Adjust speed here
             time.sleep(0.2) #show the bullet a little longer for the user to see it.
@@ -712,48 +725,6 @@ class Unit:
             print("something broke in grow_bullets:",e)
         self.simulshots += 1
         return
-        
-    def check_bullet_hit(self, x0, y0, x1, y1):
-        #this function has been replaced by BattleGrid.check_bullet_hit
-        # which in practice is this.manager.battlefield.check_bullet_hit.
-        try:
-            global allUnits
-            minx = min(x0, x1)
-            maxx = max(x0, x1)
-            miny = min(y0, y1)
-            maxy = max(y0, y1)
-
-            lowd = 999999
-            hitunit = None
-            if self.team_color == "Green":
-                #print("gs")
-                for unit in allUnits.redUnits.values():
-                    #bullets pass over dead units.
-                    if unit.alive:
-                        if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
-                            d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
-                            if d < lowd:
-                                lowd = d
-                                hitunit = unit
-                            #return d
-            elif self.team_color == "Red":
-                for unit in allUnits.greenUnits.values():
-                    if unit.alive:
-                        if (minx <= unit.x+UNIT_SIZE and maxx >= unit.x and miny <= unit.y+UNIT_SIZE and maxy >= unit.y):
-                            d = ((x0 - unit.xc) ** 2 + (y0 - unit.yc) ** 2) ** 0.5
-                            if d < lowd:
-                                lowd = d
-                                hitunit = unit
-                            #unit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
-                            #return d
-            if hitunit is not None:
-                #print(hitunit.remainingHP)
-                hitunit.HPMod(0-TROOP_TYPES[self.troop_type]["damage"])
-                #self.canvas.after(1, lambda pop=0-TROOP_TYPES[self.troop_type]["damage"]: hitunit.HPMod(pop))
-                return lowd
-        except Exception as e:
-            print("something broke in check_bullet_hit:",e)
-        return 0
     
     def enter(self, event=None):
         self.schedule()
