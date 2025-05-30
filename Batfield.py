@@ -9,12 +9,11 @@ import time
 import random
 import netcode
 import threading
+from bfield_effects import effects_manager, EFFECT_TYPES
+from config import WIDTH, HEIGHT, UNIT_SIZE, FPS
 
 
 # Define global variables
-WIDTH = 1024
-HEIGHT = 768
-FPS = 30  # Maximum frame rate
 ylp = [1, 6, 10, 20, 25, 70, 75, 85, 88, 99] #percent y offsets for common elements
 # 0 hb top, 1 bot, 2 flank top, 3 bot, 4 home top, 5 bot, 6 flank top, 7 bot, 8 ctl top, 9 bot
 
@@ -26,11 +25,16 @@ AI_CASH_HANDICAP = 15
 SOLO_AI_TEAM_COMP = (20,20,20,20,20,0)
 
 
-#lists to carry the units on the battlefield
+#lists to carry the units and effects on the battlefield
 units = []
 selected_troop_to_buy = None
 temp_troop_to_buy = None
+selected_effect = None
+pending_effect = None  # For two-click line effects
+effect_popup = None
+effect_buttons = []
 #greenUnits and redUnits are borrowed from the unit file
+
 
 # Initialize tkinter window
 root = tk.Tk()
@@ -48,6 +52,9 @@ netHandler = netcode.ServerClient() #will be a netcode.ServerClient object later
 #callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit,"shoot":net_fixshot}
 
 allUnits.setCanvas(canvas)
+effects_manager.setCanvas(canvas)
+effects_manager.setUnitManager(allUnits)
+effects_manager.unit_manager = allUnits
 
 big_number_font = Font(weight='bold', size=60)
 normal_font = Font(size = 10)
@@ -125,7 +132,7 @@ class Field_Region:
         if click_callback is not None:
             self.canvas.tag_bind(self.rectangle, '<Button-1>', lambda event : self.click_callback(event))
         canvas.update()
-    def bindCallback(mycallback):
+    def bindCallback(self, mycallback):
         self.canvas.tag_bind(self.rectangle, '<Button-1>', lambda event : mycallback(event))
         canvas.update()
     def hide(self): #hide the placement area, like when the game starts
@@ -255,6 +262,99 @@ class Shop_Troop_Button:
             tw.destroy()
 
 
+class EffectShopButton:
+    def __init__(self, canvas, x1, y1, x2, y2, effect_type, select_func):
+        self.effect_type = effect_type
+        self.canvas = canvas
+        self.x1 = x1
+        self.x2 = x2
+        self.y1 = y1
+        self.y2 = y2
+        self.xc = ((x2 - x1) / 2) + x1
+        self.yc = ((y2 - y1) / 2) + y1
+        self.select_func = select_func
+        self.waittime = 100
+        self.wraplength = 180
+        self.wait_id = None
+        self.tw = None
+        self.button_id = self.canvas.create_rectangle(x1, y1, x2, y2, fill='gray', outline='blue', width=3)
+        self.canvas.tag_bind(self.button_id, "<Button-1>", self.button_click)
+        self.canvas.tag_bind(self.button_id, "<Enter>", self.enter)
+        self.canvas.tag_bind(self.button_id, "<Leave>", self.leave)
+        sprite_y = list(EFFECT_TYPES.keys()).index(effect_type) * UNIT_SIZE
+        sprite = Image.open("effect_sprites.png").crop((0, sprite_y, UNIT_SIZE, sprite_y + UNIT_SIZE))
+        self.sprite = ImageTk.PhotoImage(sprite)
+        self.sprite_image = canvas.create_image(x1 + 20, self.yc, image=self.sprite, anchor=tk.CENTER)
+        self.text_id = canvas.create_text(x1 + 40, self.yc, text=effect_type, font=normal_font, anchor=tk.W)
+        canvas.tag_bind(self.sprite_image, "<Button-1>", self.button_click)
+        canvas.tag_bind(self.text_id, "<Button-1>", self.button_click)
+        self.canvas.tag_bind(self.sprite_image, "<Enter>", self.enter)
+        self.canvas.tag_bind(self.text_id, "<Enter>", self.enter)
+        self.canvas.tag_bind(self.sprite_image, "<Leave>", self.leave)
+        self.canvas.tag_bind(self.text_id, "<Leave>", self.leave)
+        self.tooltip_text = f"{effect_type}\n"
+        for attr, value in EFFECT_TYPES[effect_type].items():
+            self.tooltip_text += f"{attr}: {value}\n"
+        canvas.update()
+
+    #review tooltip behavior and conform to other button standards if ineffective.
+
+    def button_click(self, event):
+        self.leave()
+        self.set_selected()
+        self.select_func(self.effect_type)
+        canvas.update()
+
+    def set_selected(self, selected=True):
+        self.canvas.itemconfig(self.button_id, outline='blue' if selected else 'light gray')
+
+    def show(self):
+        self.canvas.itemconfig(self.button_id, state="normal")
+        self.canvas.itemconfig(self.sprite_image, state='normal')
+        self.canvas.itemconfig(self.text_id, state='normal')
+        canvas.update()
+
+    def hide(self):
+        self.canvas.itemconfig(self.button_id, state='hidden')
+        self.canvas.itemconfig(self.sprite_image, state='hidden')
+        self.canvas.itemconfig(self.text_id, state='disabled')
+        canvas.update()
+
+    def enter(self, event=None):
+        self.schedule()
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hidetip()
+
+    def schedule(self):
+        self.unschedule()
+        self.wait_id = self.canvas.after(self.waittime, self.showtip)
+
+    def unschedule(self):
+        id = self.wait_id
+        self.wait_id = None
+        if id:
+            self.canvas.after_cancel(id)
+
+    def showtip(self):
+        window_x = self.canvas.winfo_rootx()
+        window_y = self.canvas.winfo_rooty()
+        x = window_x + self.x2 + 10
+        y = window_y + self.y1 - 50
+        self.tw = tk.Toplevel(self.canvas)
+        self.tw.wm_overrideredirect(True)
+        self.tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(self.tw, text=self.tooltip_text, justify='left',
+                         background="#ffffff", relief='solid', borderwidth=1,
+                         wraplength=self.wraplength)
+        label.pack(ipadx=1)
+
+    def hidetip(self):
+        if self.tw:
+            self.tw.destroy()
+            self.tw = None
+
 class generic_Button:
     def __init__(self, canvas, x1, y1, x2, y2, text, callback):
         global normal_font
@@ -312,18 +412,27 @@ def check_opponent_ready():
         root.after(500, ready_countdown)
 
 def ready_pb_click(event):
-    global NET_ROUND_END
+    global NET_ROUND_END, effect_popup
     NET_ROUND_END = False
     global root, countdown_text, readyButton, buy_NFlank_Btn, buy_SFlank_Btn, selected_troop_to_buy, temp_troop_to_buy, GAME_TYPE, net_player_ready, netHandler
     answer = messagebox.askyesno("Really ready?", "All done placing troops?")
     if answer:
         readyButton.hide()
+        effects_button.hide()
         for pb in buyTroopButtons:
             pb.hide()
         buy_NFlank_Btn.hide()
         buy_SFlank_Btn.hide()
+        if effect_popup:
+            for button in effect_buttons:
+                button.set_selected(False)
+            effect_popup.destroy()
+            effect_popup = None
+            canvas.unbind("<Button-1>")
         temp_troop_to_buy = selected_troop_to_buy
         selected_troop_to_buy = None
+        selected_effect = None
+        effects_manager.start_battle()
         
         if not (GAME_TYPE == "solo"):
             netHandler.send("ready", True)
@@ -338,7 +447,43 @@ def ready_pb_click(event):
             canvas.update()
             root.after(1000, ready_countdown)
             
-        
+def select_effect(effect_name):
+    global selected_effect, effect_popup, selected_troop_to_buy, buyTroopButtons, effect_buttons
+    selected_effect = effect_name
+    for button in effect_buttons:
+        button.set_selected(button.effect_type == effect_name)
+    for pb in buyTroopButtons:
+        pb.set_selected(False)
+    selected_troop_to_buy = None
+    canvas.bind("<Button-1>", place_effect)
+
+def open_effect_popup(event):
+    global effect_popup, effect_buttons
+    if effect_popup:
+        effect_popup.destroy()
+    effect_popup = tk.Toplevel(root)
+    effect_popup.title("Select Effect")
+    effect_popup.geometry("300x450")
+    popup_canvas = tk.Canvas(effect_popup, width=280, height=360, bg="white")
+    popup_canvas.pack(pady=10)
+    effect_buttons = []
+    for i, effect_type in enumerate(EFFECT_TYPES.keys()):
+        effectButton = EffectShopButton(popup_canvas, 10, 10 + i*40, 270, 40 + i*40, effect_type, select_effect)
+        effect_buttons.append(effectButton)
+    close_button = tk.Button(effect_popup, text="Close", command=effect_popup.destroy)
+    close_button = tk.Button(effect_popup, text="Close", command=close_effect_popup)
+    close_button.pack(pady=5)
+    effect_popup.protocol("WM_DELETE_WINDOW", close_effect_popup)
+
+def close_effect_popup():
+    global selected_effect, effect_popup
+    for button in effect_buttons:
+        button.set_selected(False)
+    selected_effect = None
+    canvas.unbind("<Button-1>")
+    if effect_popup:
+        effect_popup.destroy()
+        effect_popup = None
 
 def Nflank_unlock_click(event):
     global canvas, Flank_Unlock_Cost, greenPlayer, buy_NFlank_Btn, greenFlankN
@@ -366,8 +511,11 @@ def buy_troop_button_press(trooptype):
     
     for btn in buyTroopButtons:
         if not (btn.troop_type == trooptype):
-            
             btn.set_selected(False)
+    if effect_popup:
+        for button in effect_buttons:
+            button.set_selected(False)
+    selected_effect = None
     selected_troop_to_buy = trooptype
     
 def place_buy_unit(event):
@@ -390,6 +538,49 @@ def place_buy_unit(event):
                 #GAME_TYPE = None # host, client, or solo
     pass
 
+def place_effect(event):
+    global selected_effect, pending_effect
+    if selected_effect:
+        x, y = event.x, event.y
+        effect_data = EFFECT_TYPES[selected_effect]
+        if effect_data["type"] == "line":
+            if pending_effect is None:
+                pending_effect = {"name": selected_effect, "x1": x, "y1": y}
+                canvas.bind("<Button-1>", place_effect_second_click)
+                canvas.config(cursor="crosshair")
+                quick_message(x, y, "Click again for end point", 2000)
+            return
+        confirm_effect_placement(selected_effect, x, y)
+
+def place_effect_second_click(event):
+    global pending_effect
+    if pending_effect:
+        x2, y2 = event.x, event.y
+        confirm_effect_placement(pending_effect["name"], pending_effect["x1"], pending_effect["y1"],
+                                orientation="custom", end_x=x2, end_y=y2)
+        pending_effect = None
+        canvas.unbind("<Button-1>")
+        canvas.config(cursor="")
+        
+        
+def confirm_effect_placement(effect_name, x, y, orientation="horizontal", end_x=None, end_y=None):
+    global player, selected_effect, effect_popup
+    cost = EFFECT_TYPES[effect_name]["cost"]
+    pos_text = f"at ({x}, {y})" if end_x is None else f"from ({x}, {y}) to ({end_x}, {end_y})"
+    if messagebox.askyesno("Confirm Effect", f"Place {effect_name} {pos_text} for ${cost}?"):
+        if greenPlayer.changeCash(-cost):
+            effects_manager.add_effect(effect_name, x=x, y=y, orientation=orientation, end_x=end_x, end_y=end_y)
+            if GAME_TYPE != "solo":
+                netHandler.send("effect", {"name": effect_name, "x": x, "y": y, "orientation": orientation, "end_x": end_x, "end_y": end_y})
+    for button in effect_buttons:
+        button.set_selected(False)
+    selected_effect = None
+    #for button in effect_buttons:
+    #    button.set_selected(False)
+    #if effect_popup:
+    #    effect_popup.destroy()
+    #    effect_popup = None
+    #    canvas.unbind("<Button-1>")
 
 #other useful functions...
 def quick_message(x,y,mytext, duration=2000):
@@ -456,13 +647,14 @@ greenFlankS.hide()
 #shop buttons for the setup phase
 #change the buttonspace to make room for more buttons if needed
 bspace = [smallxoffset, ylayout[8], WIDTH-smallxoffset, ylayout[9]] #x1, y1, x2, y2
-buttonwidth = (bspace[2]-bspace[0])/(len(TROOP_TYPES.keys())) #The right-hand button will be "ready"
+buttonwidth = (bspace[2]-bspace[0])/(len(TROOP_TYPES.keys())+1) #Len is already indices+1. The right-hand button will be "ready". +1 again for the effects button.
 buyTroopButtons = []
 for i in range(len(TROOP_TYPES.keys())-1): #less 2 for the homebase, and to make room for a "done" button
     buyTroopButtons.append(Shop_Troop_Button(canvas, bspace[0]+(i*buttonwidth), bspace[1], bspace[0]+((i+1)*buttonwidth),bspace[3],list(TROOP_TYPES.keys())[i],buy_troop_button_press))
 
 #misc shop buttons
-readyButton = generic_Button(canvas, bspace[0]+(buttonwidth*(len(TROOP_TYPES.keys())-1)), bspace[1], bspace[0]+(buttonwidth*(len(TROOP_TYPES.keys()))), bspace[3], "Ready", ready_pb_click)
+effects_button = generic_Button(canvas, bspace[0]+(buttonwidth*(len(TROOP_TYPES.keys())-1)), bspace[1], bspace[0]+(buttonwidth*(len(TROOP_TYPES.keys()))), bspace[3], "Effects", open_effect_popup)
+readyButton = generic_Button(canvas, bspace[0]+(buttonwidth*(len(TROOP_TYPES.keys()))), bspace[1], bspace[0]+(buttonwidth*(len(TROOP_TYPES.keys())+1)), bspace[3], "Ready", ready_pb_click)
 def get_flankbtn_coords(xc, yc, font, fbt):
     lw = font.measure(fbt)+5
     lwc = lw/2
@@ -558,13 +750,32 @@ def net_win(payload):
 def net_seed(payload):
     random.seed(payload)
 
-callbacklist = {"ready":net_ready, "unit":net_addunit, "die":net_unitdie,"target":net_targetunit,"shoot":net_fixshot, "win":net_win, "seed":net_seed}
+def net_effect(payload):
+    # netHandler.send("effect", {"name": effect_name, "x": x, "y": y, "orientation": orientation, "end_x": end_x, "end_y": end_y})
+    effects_manager.add_effect(
+        payload["name"],
+        x=payload["x"],
+        y=payload["y"],
+        orientation = payload["orientation"],
+        end_x=payload["end_x"],
+        end_y=payload["end_y"],
+        team="red")
+
+callbacklist = {"ready":net_ready,
+                "unit":net_addunit,
+                "die":net_unitdie,
+                "target":net_targetunit,
+                "shoot":net_fixshot,
+                "win":net_win,
+                "seed":net_seed,
+                "effect": net_effect}
 
 #GUI Functions##############################################
 def setup_battlefield(new_battlefield = False):
-    global countdown_text, WINNER_DECLARED, allUnits, greenPlayer, redPlayer, greenHome, redHome, canvas
+    global countdown_text, WINNER_DECLARED, allUnits, greenPlayer, redPlayer, greenHome, redHome, canvas, effects_manager
     canvas.itemconfig(countdown_text, state="hidden")
     canvas.itemconfig(countdown_text, text = "3")
+    effects_manager.end_battle()
     #clear the screen and delete everything
     if new_battlefield:
         allUnits.clear_units()
@@ -623,7 +834,7 @@ def setup_phase():
         canvas.itemconfig(greenFlankS, state='normal')
     else:
         buy_SFlank_Btn.show()
-
+    effects_button.show()
     readyButton.show()
     for pb in buyTroopButtons:
         pb.show()
@@ -741,6 +952,8 @@ def resolve_battle():
         if NET_ROUND_END:
             return
         else:
+            #run the effect AI's
+            effects_manager.update()
             #run the unit AI's
             for tank in allUnits.liveUnits:
                 #root.after(int(1000/FPS), tank.unit_AI())
@@ -771,8 +984,9 @@ def show_winner(winner, HPloss = PLAYER_HP_PER_ROUND):
     # show who won the battle
     # subtract from player HP
     #print(winner)
-    calcLoss = True
-    #if HPloss != 0: #this if statement makes it so you don't account for tank HP when calculating opponent hp loss.
+    calcLoss = GAME_TYPE != "client"
+    #this commented section makes it so you don't account for tank HP when calculating opponent hp loss.
+    #if HPloss != 0: 
     #    #print("received HPloss:", HPloss)
     #    calcLoss = False
     gameover = False
@@ -862,7 +1076,8 @@ def get_ai_comp(): #a popup window for the user to select solo or multiplayer
     handicap_var = tk.StringVar(value=str(AI_CASH_HANDICAP))
     handicap_entry = tk.Entry(popup, textvariable=handicap_var)
     handicap_entry.pack(pady=5)
-    
+
+    SOLO_AI_TEAM_COMP = AI_TEAM_COMPS[list(AI_TEAM_COMPS.keys())[0]]
     confirm_button = tk.Button(popup, text="Confirm", command=on_confirm)
     confirm_button.pack(pady=5)
 
@@ -1017,6 +1232,8 @@ def get_connection_type(): #a popup window for the user to select solo or multip
     button_frame = tk.Frame(popup)
     button_frame.pack(pady=10)
 
+    global GAME_TYPE
+    GAME_TYPE = "solo"
     options = ["client", "host", "solo"]
     for option in options:
         button = tk.Button(button_frame, text=option, command=lambda opt=option: on_button_click(opt))
