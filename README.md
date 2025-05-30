@@ -3,7 +3,7 @@ Tank Battler
 
 This is basically a featureless MechaBellum clone. Right now, you can buy/place tanks and unlock the flanks. You can't upgrade units, and there are no special effects to buy (like missiles or napalm, etc).
 
-The balance is about where I want it to be. If both sides use just one kind of tank, there are determinate winners and losers. But no single-type troop comp is better than a variety of troop-types. There are a lot of strategy options with what little we have. 
+The tank balance is about where I want it to be. The effects are wildly imbalanced at the moment (mostly underpowered), but I'd rather them be underpowered than overpowered.
 
 If you want to win ***every single time*** against the bot, just put a few cannons next to your castle on the first round, and then spend every other round putting chainguns in the far corner behind the bot base (obvs this won't work against humans). If you start to lose, put a few more canons next to your base to slow them down. You can win the base race.
 
@@ -22,4 +22,4 @@ To do:
 - fix the unit mousehover so it doesn't have an extra newline
 - improve the AI for the PC opponent (right now it just randomly places tanks)
 - add some more tanks
-- add battlefield oneshot effects (like napalm, shields, etc)
+- Balance and improve oneshot effects (like napalm, shields, etc)
