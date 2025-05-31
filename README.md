@@ -13,8 +13,8 @@ For devs: it's set up so that it would be pretty easy to add more tanks. Just mo
 
 To play the game, put all the files in one folder and run Batfield.py. If you just want to watch tanks fight, bfield_idle_demo.py is for that, but it is running like my first draft of the unit class, so the behavior won't be the same as the game units.... maybe I'll polish it a little later.
 
-![image info](screenshots/Screenshot1.png)
-![image info](screenshots/Screenshot2.png)
+![image info](screenshots/Screenshot5.png)
+![image info](screenshots/Screenshot6.png)
 ![image info](screenshots/Screenshot4.png)
 
 To do:
